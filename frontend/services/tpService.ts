@@ -1,10 +1,67 @@
 import { TP, TPProgress, Assignment, StepProgress } from "@/types";
 import { mockTPs } from "@/data/mockTPs";
 import { mockAssignments } from "@/data/mockAssignments";
+import {
+  legacyAssignmentIdToUuid,
+  legacyTpIdToUuid,
+  legacyUserIdToUuid,
+} from "@/data/mockIds";
 
 const PROGRESS_KEY = "agentic_tp_progress";
 const ASSIGNMENTS_KEY = "agentic_tp_assignments";
 const TPS_KEY = "agentic_tp_tps";
+
+const mapId = (id: string, mapper: Record<string, string>): string => mapper[id] ?? id;
+
+const migrateTp = (tp: TP): TP => {
+  const newId = mapId(tp.id, legacyTpIdToUuid);
+  const newCreatedBy = mapId(tp.createdBy, legacyUserIdToUuid);
+  if (newId === tp.id && newCreatedBy === tp.createdBy) return tp;
+  return { ...tp, id: newId, createdBy: newCreatedBy };
+};
+
+const migrateAssignment = (a: Assignment): Assignment => {
+  const newId = mapId(a.id, legacyAssignmentIdToUuid);
+  const newTpId = mapId(a.tpId, legacyTpIdToUuid);
+  const newAssignedBy = mapId(a.assignedBy, legacyUserIdToUuid);
+  const newStudentIds = a.studentIds.map((sid) => mapId(sid, legacyUserIdToUuid));
+  if (
+    newId === a.id &&
+    newTpId === a.tpId &&
+    newAssignedBy === a.assignedBy &&
+    newStudentIds.every((v, i) => v === a.studentIds[i])
+  ) {
+    return a;
+  }
+  return {
+    ...a,
+    id: newId,
+    tpId: newTpId,
+    assignedBy: newAssignedBy,
+    studentIds: newStudentIds,
+  };
+};
+
+const migrateProgress = (p: TPProgress): TPProgress => {
+  const newStudentId = mapId(p.studentId, legacyUserIdToUuid);
+  const newTpId = mapId(p.tpId, legacyTpIdToUuid);
+  const newAssignmentId = mapId(p.assignmentId, legacyAssignmentIdToUuid);
+
+  if (
+    newStudentId === p.studentId &&
+    newTpId === p.tpId &&
+    newAssignmentId === p.assignmentId
+  ) {
+    return p;
+  }
+
+  return {
+    ...p,
+    studentId: newStudentId,
+    tpId: newTpId,
+    assignmentId: newAssignmentId,
+  };
+};
 
 // ─── TP CRUD ──────────────────────────────────────────────────────────────────
 export const tpService = {
@@ -13,7 +70,13 @@ export const tpService = {
     const raw = localStorage.getItem(TPS_KEY);
     if (!raw) return mockTPs;
     try {
-      return JSON.parse(raw) as TP[];
+      const parsed = JSON.parse(raw) as TP[];
+      const migrated = parsed.map(migrateTp);
+      const changed = migrated.some((t, i) => t !== parsed[i]);
+      if (changed) {
+        localStorage.setItem(TPS_KEY, JSON.stringify(migrated));
+      }
+      return migrated;
     } catch {
       return mockTPs;
     }
@@ -49,7 +112,13 @@ export const tpService = {
     const raw = localStorage.getItem(ASSIGNMENTS_KEY);
     if (!raw) return mockAssignments;
     try {
-      return JSON.parse(raw) as Assignment[];
+      const parsed = JSON.parse(raw) as Assignment[];
+      const migrated = parsed.map(migrateAssignment);
+      const changed = migrated.some((a, i) => a !== parsed[i]);
+      if (changed) {
+        localStorage.setItem(ASSIGNMENTS_KEY, JSON.stringify(migrated));
+      }
+      return migrated;
     } catch {
       return mockAssignments;
     }
@@ -84,7 +153,13 @@ export const tpService = {
     const raw = localStorage.getItem(PROGRESS_KEY);
     if (!raw) return [];
     try {
-      return JSON.parse(raw) as TPProgress[];
+      const parsed = JSON.parse(raw) as TPProgress[];
+      const migrated = parsed.map(migrateProgress);
+      const changed = migrated.some((p, i) => p !== parsed[i]);
+      if (changed) {
+        localStorage.setItem(PROGRESS_KEY, JSON.stringify(migrated));
+      }
+      return migrated;
     } catch {
       return [];
     }
@@ -159,7 +234,7 @@ ${step.instructions}
 In this step, you'll be working with the following HTML element(s): **${tagList}**.
 
 ## Why it matters
-HTML elements are the building blocks of every web page. 
+HTML elements are the building blocks of every web page.
 Each tag has a specific purpose: some display content, some organize structure, and some allow user interaction.
 
 ## How to approach it

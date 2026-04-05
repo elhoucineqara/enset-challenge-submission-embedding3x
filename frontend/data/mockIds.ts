@@ -17,3 +17,23 @@ export const assignmentIds = {
   assign2: "b4f71b3f-4bd2-4e57-8d2b-3b0ce2b1c2d7",
   assign3: "4c9f2f8f-8b73-4a21-8c56-2d4c8fcd2df9",
 } as const;
+
+export const legacyUserIdToUuid: Record<string, string> = {
+  "teacher-1": userIds.teacher1,
+  "teacher-2": userIds.teacher2,
+  "student-1": userIds.student1,
+  "student-2": userIds.student2,
+  "student-3": userIds.student3,
+};
+
+export const legacyTpIdToUuid: Record<string, string> = {
+  "tp-1": tpIds.tp1,
+  "tp-2": tpIds.tp2,
+  "tp-3": tpIds.tp3,
+};
+
+export const legacyAssignmentIdToUuid: Record<string, string> = {
+  "assign-1": assignmentIds.assign1,
+  "assign-2": assignmentIds.assign2,
+  "assign-3": assignmentIds.assign3,
+};

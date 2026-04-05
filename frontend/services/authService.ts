@@ -27,7 +27,17 @@ export const authService = {
     const raw = localStorage.getItem(SESSION_KEY);
     if (!raw) return null;
     try {
-      return JSON.parse(raw) as User;
+      const stored = JSON.parse(raw) as User;
+
+      // If IDs changed (e.g., legacy "student-1" -> UUID), repair session using email.
+      const stillExists = mockUsers.some((u) => u.id === stored.id);
+      if (stillExists) return stored;
+
+      const updated = mockUsers.find((u) => u.email === stored.email) ?? null;
+      if (updated) {
+        localStorage.setItem(SESSION_KEY, JSON.stringify(updated));
+      }
+      return updated;
     } catch {
       return null;
     }

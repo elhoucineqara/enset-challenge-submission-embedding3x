@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { Bot } from "lucide-react";
+import Image from "next/image";
 import { buttonVariants } from "@/components/ui/button";
 
 export default function Navbar() {
@@ -7,8 +7,15 @@ export default function Navbar() {
     <nav className="fixed top-0 left-0 right-0 z-50 bg-[#1a1a2e]/80 backdrop-blur-xl border-b border-[#0f3460]/40">
       <div className="max-w-6xl mx-auto px-6 h-16 flex items-center justify-between">
         <Link href="/" className="flex items-center gap-2">
-          <Bot className="w-6 h-6 text-[#cba6f7]" />
-          <span className="text-lg font-bold text-white">AgenticTP</span>
+          <Image
+            src="/logo.png"
+            alt="AgenticTP"
+            width={24}
+            height={24}
+            className="w-6 h-6"
+            priority
+          />
+          <span className="text-lg font-bold text-white">EmbeddingTP</span>
         </Link>
 
         <div className="hidden md:flex items-center gap-8 text-sm text-white/70">

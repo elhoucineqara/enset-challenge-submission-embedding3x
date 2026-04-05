@@ -25,7 +25,6 @@ export default function HeroSection() {
 
       <div className="relative z-10 max-w-5xl mx-auto px-6 text-center">
         <div className="inline-flex items-center gap-2 px-4 py-2 rounded-full border border-[#cba6f7]/30 bg-[#cba6f7]/5 mb-8">
-          <Sparkles className="w-4 h-4 text-[#89b4fa]" />
           <span className="text-sm text-white/80 font-medium">
             AI-Powered Practical Work Environment
           </span>
