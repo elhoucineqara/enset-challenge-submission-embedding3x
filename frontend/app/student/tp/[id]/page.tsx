@@ -7,7 +7,7 @@ import { tpService } from "@/services/tpService";
 import { TP, TPProgress } from "@/types";
 import TPExplanation from "@/components/TPExplanation/TPExplanation";
 import IDELayout from "@/components/IDELayout/IDELayout";
-import Quiz from "@/components/Quiz/Quiz";
+import Quiz from "@/components/quiz/Quiz";
 import Link from "next/link";
 
 // ─── Phase types ──────────────────────────────────────────────────────────────

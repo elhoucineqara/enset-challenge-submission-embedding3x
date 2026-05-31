@@ -1,265 +1,398 @@
 # Agentic TP Platform
 
 > **AI-Powered Educational Platform for Programming Practicals**
-> ENSET Challenge — Hackathon Submission
+> ENSET Challenge — Hackathon Submission · embedding3x
 
-The **Agentic TP Platform** is an AI-powered educational system designed to transform how students complete practical programming assignments — known as **TPs** (*Travaux Pratiques*). It combines a modern Next.js web interface, a microservices backend, and a suite of specialized AI agents to deliver a fully guided, intelligent, and cheat-resistant coding environment.
+The **Agentic TP Platform** transforms how students complete practical programming assignments (*Travaux Pratiques*). It combines a Next.js workspace, a Spring Cloud microservices backend, and a suite of specialized AI agents — each powered by a different local LLM via Ollama — to deliver a fully guided, intelligent, and academically-honest coding environment.
 
 🌐 **Live demo:** https://tp-front-seven.vercel.app/
 
 ---
 
+## Highlights
 
-
-## ✨ Highlights
-
-| 🤖 **3 AI Agents** | 📚 **RAG-Grounded Knowledge** | 🛡️ **Anti-Cheat Mechanisms** | 📊 **Teacher Analytics** |
+| 🤖 3 Specialized AI Agents | 🦙 100% Local LLMs via Ollama | 🛡️ Anti-Cheat Built-in | 📊 Teacher Analytics |
 | :---: | :---: | :---: | :---: |
-
-- **Personalized AI support** at every stage of the assignment lifecycle
-- **Course-grounded responses** via a RAG system that reads the actual course materials
-- **Academic integrity enforcement** through copy-paste prevention and session timing
-- **Automated evaluation and teacher reporting**, reducing post-session workload
+| Each agent has its own model, system prompt, and tool set | mistral · deepseek-coder · gemma4 · deepseek-v3.2 | Copy-paste disabled, session timer, code validation | Per-student progress, hint usage, comprehension scores |
 
 ---
 
-## 🧩 The Problem
-
-Practical programming sessions are simultaneously the most valuable and the most difficult to supervise at scale:
-
-| Pain Point | Current Impact | Platform Response |
-| --- | --- | --- |
-| No individual AI support | Students blocked, progress uneven | **Hint Agent** provides adaptive hints |
-| Easy to copy solutions | Learning bypassed | Copy-paste disabled; IDE-only input |
-| No end-of-session check | Understanding unverified | **Evaluation Agent** generates a quiz |
-| Teacher workload | Manual grading, slow feedback | Automated report generation |
-
----
-
-## 🏗️ System Architecture
-
-The platform is a distributed system following a **microservices architecture**, containerised with Docker and orchestrated via Kubernetes (Minikube for development).
+## System Architecture
 
 ```
-┌─────────────────────────────────────────────────────────┐
-│                  FRONTEND (Next.js 14)                  │
-│        Student Workspace  •  Teacher Dashboard          │
-└──────────────────────────┬──────────────────────────────┘
-                           │
-        ┌──────────────────┼──────────────────┐
-        │                  │                  │
-        ▼                  ▼                  ▼
-┌──────────────┐   ┌──────────────┐   ┌──────────────────┐
-│ Auth Service │   │ TP Mgmt Svc  │   │  Agent Gateway   │
-│ (Spring Boot)│   │ (Spring Boot)│   │    (FastAPI)     │
-└──────────────┘   └──────────────┘   └────────┬─────────┘
-                                               │
-                          ┌────────────────────┼────────────────────┐
-                          ▼                    ▼                    ▼
-                 ┌─────────────────┐  ┌─────────────────┐  ┌─────────────────┐
-                 │ Explanation     │  │   Hint Agent    │  │   Evaluation    │
-                 │     Agent       │  │                 │  │     Agent       │
-                 └─────────────────┘  └─────────────────┘  └─────────────────┘
-                                               │
-                                               ▼
-                                    ┌──────────────────────┐
-                                    │  RAG Service         │
-                                    │  (Spring AI +        │
-                                    │   pgvector)          │
-                                    └──────────────────────┘
+┌────────────────────────────────────────────────────────────────┐
+│                    FRONTEND  (Next.js 14)                      │
+│            Student Workspace  ·  Teacher Dashboard             │
+└───────────────────────────┬────────────────────────────────────┘
+                            │  HTTP  (port 3000)
+                            ▼
+┌────────────────────────────────────────────────────────────────┐
+│              Spring Cloud API Gateway  (port 8080)             │
+│                  JWT AuthFilter · CORS · Routing               │
+└──────────┬─────────────────┬──────────────────────────────────┘
+           │                 │
+           ▼                 ▼
+┌──────────────────┐  ┌──────────────────┐
+│  Auth Service    │  │   TP Service     │
+│  Spring Boot     │  │   Spring Boot    │
+│  Port 8081       │  │   Port 8082      │
+│  JWT · BCrypt    │  │   TPs · Progress │
+│  PostgreSQL      │  │   PostgreSQL     │
+└──────────────────┘  └──────────────────┘
+           │
+           ▼
+┌─────────────────────────────────────────────────┐
+│           Eureka Discovery Server (8761)         │
+│          Service registry for Spring Cloud       │
+└─────────────────────────────────────────────────┘
+
+┌────────────────────────────────────────────────────────────────┐
+│               Agent Gateway  FastAPI  (port 8000)              │
+│         Routes /explain · /hint · /generate-quiz · /evaluate   │
+└──────────┬──────────────┬───────────────┬──────────────────────┘
+           │              │               │
+           ▼              ▼               ▼
+┌─────────────────┐ ┌─────────────────┐ ┌─────────────────┐
+│ Explanation     │ │   Hint Agent    │ │  Evaluation     │
+│ Agent  :8001    │ │   :8002         │ │  Agent  :8003   │
+│                 │ │                 │ │                 │
+│ mistral         │ │ deepseek-coder  │ │ gemma4:31b      │
+│ (local Ollama)  │ │ 6.7b (Ollama)   │ │ (cloud via      │
+│                 │ │                 │ │  Ollama)        │
+└─────────────────┘ └─────────────────┘ └─────────────────┘
+                                │
+                                ▼
+                    ┌─────────────────────┐
+                    │   Orchestrator      │
+                    │   :8004             │
+                    │                    │
+                    │ deepseek-v3.2:cloud │
+                    │ (LangGraph routing) │
+                    └─────────────────────┘
+                                │
+                    ┌───────────┴───────────┐
+                    ▼                       ▼
+             ┌────────────┐        ┌────────────────┐
+             │  Ollama    │        │   PostgreSQL   │
+             │  :11434    │        │   :5432        │
+             │  (host)    │        │   auth_db      │
+             └────────────┘        │   tp_db        │
+                                   └────────────────┘
 ```
-
-### Layers
-
-| Layer | Description |
-| --- | --- |
-| **Frontend** | Next.js application (TypeScript, SSR) serving the student workspace, teacher dashboard, and live HTML preview panel. |
-| **Backend Services** | Two Spring Boot microservices handle authentication (Auth Service) and assignment lifecycle management (TP Management Service). |
-| **AI Gateway** | A FastAPI Agent Gateway routes requests to the appropriate AI agent and manages communication with the RAG service. |
-| **Infrastructure** | Docker + Kubernetes orchestration, optional Kafka message bus for asynchronous agent communication, and a PostgreSQL-backed vector database. |
 
 ---
 
-## 🤖 The Three AI Agents
+## AI Agents
 
-Each agent shares the same LLM backend but receives different system prompts, tool configurations, and RAG contexts tailored to its specific role.
+All agents use **LangGraph** (`create_react_agent`) with real tools. Each connects to a different local model via Ollama.
 
-### 1. Explanation Agent — *Onboarding*
-Explains the TP statement before the student begins coding. Answers clarification questions about requirements, expected outputs, and concepts. **Deliberately constrained from providing any code** — only explanations and pointers.
+### 1. Explanation Agent — *Onboarding Phase*
+- **Model:** `mistral` (local Ollama)
+- **Port:** 8001 → `POST /explain`
+- **Role:** Explains TP steps and answers clarification questions before coding begins. Uses Socratic method — never provides code. Tools: `explain_tp_step`, `get_learning_objectives`, `structure_clarification`, `detect_misconception`.
 
-### 2. Hint Agent — *In-Session Assistance*
-Analyses the student's current code and provides a calibrated, **progressive hint**. Starts with high-level directional hints and gradually becomes more specific if the student remains stuck. Tracks hint history within a session to avoid repetition. **Explicitly prohibited from producing working code.**
+### 2. Hint Agent — *Coding Phase*
+- **Model:** `deepseek-coder:6.7b` (local Ollama)
+- **Port:** 8002 → `POST /hint`
+- **Role:** Analyzes the student's live HTML code and delivers progressive hints (4 levels: abstract → conceptual → structural → specific). Validates required HTML tags, tracks hint history. Never writes complete code. Tools: `validate_html_tags`, `analyze_html_structure`, `generate_progressive_hint`, `assess_hint_level`.
 
 ### 3. Evaluation Agent — *Post-Session Assessment*
-Generates a 3–5 question quiz based on the TP content and the student's code submission, then evaluates the student's answers to produce a final comprehension score. Closes the learning loop by testing whether the student can articulate **what they built and why**.
+- **Model:** `gemma4:31b-cloud` (cloud via Ollama)
+- **Port:** 8003 → `POST /generate-quiz` · `POST /evaluate`
+- **Role:** Generates 3–5 comprehension MCQ questions grounded in the student's actual code submission. Evaluates answers and produces a score with personalized feedback. Tools: `build_quiz_generation_prompt`, `validate_quiz_structure`, `calculate_quiz_score`, `generate_feedback_summary`.
+
+### 4. Orchestrator — *Multi-step Routing*
+- **Model:** `deepseek-v3.2:cloud` (cloud via Ollama)
+- **Port:** 8004 → `POST /orchestrate`
+- **Role:** Handles complex requests that span multiple agents. Uses LangGraph to decide which agent(s) to invoke in sequence. Tools: `call_explanation_agent`, `call_hint_agent`, `call_evaluation_agent_quiz`, `call_evaluation_agent_score`.
 
 ---
 
-## 📚 RAG Knowledge System
+## Technology Stack
 
-All AI agent responses are grounded in course-specific knowledge using **Retrieval-Augmented Generation (RAG)**. This prevents hallucination, ensures curriculum alignment, and allows the platform to be re-deployed for any course simply by updating the knowledge base.
-
-| Component | Choice |
-| --- | --- |
-| Embedding Model | `text-embedding-3-small` (OpenAI) or equivalent open-source model |
-| Vector Store | **pgvector** (PostgreSQL extension) for dev; Pinecone for production scaling |
-| RAG Framework | **Spring AI** — document loaders, chunking, embedding clients, vector store abstractions |
-| Chunk Strategy | Recursive character-text-splitter with **512-token chunks** and **50-token overlap** |
-
-Each document chunk is tagged with metadata (`course_id`, `tp_id`, `document_type`) to enable scoped retrieval — agents only retrieve context relevant to the active TP, preventing cross-contamination between assignments.
-
----
-
-## 🛠️ Technology Stack
-
-| Layer | Technology | Rationale |
-| --- | --- | --- |
-| Frontend | Next.js 14 (TypeScript) | SSR, performance, rich ecosystem |
-| Code Editor | Monaco Editor | VS Code engine; syntax highlighting |
-| Auth Service | Spring Boot 3 + Spring Security | JWT, role-based access control |
-| TP Service | Spring Boot 3 + JPA | REST API, PostgreSQL persistence |
-| Agent Gateway | FastAPI (Python) | Async I/O, ideal for LLM streaming |
-| RAG Service | Spring AI + pgvector | Native Java RAG pipeline |
-| LLM Provider | OpenAI GPT-4o / Anthropic Claude | SOTA reasoning for education |
-| Message Bus | Apache Kafka *(optional)* | Async agent orchestration |
-| Containerisation | Docker + docker-compose | Reproducible dev environment |
-| Orchestration | Kubernetes / Minikube | Production-ready service scaling |
-| Database | PostgreSQL | ACID, pgvector extension for RAG |
+| Layer | Technology | Details |
+|-------|-----------|---------|
+| **Frontend** | Next.js 14 + TypeScript + TailwindCSS | Catppuccin Mocha theme · anti-paste editor · live HTML preview |
+| **Auth Service** | Spring Boot 3.3.4 + Spring Security | JWT (jjwt 0.12) · BCrypt · PostgreSQL · Eureka client |
+| **TP Service** | Spring Boot 3.3.4 + JPA | TPs, Assignments, Progress with JSON column storage |
+| **API Gateway** | Spring Cloud Gateway | JWT `AuthFilter` · CORS · route to all microservices |
+| **Discovery** | Netflix Eureka Server | Service registry for Spring Cloud services |
+| **Agent Framework** | LangGraph + LangChain Community | `create_react_agent` pattern with Ollama LLMs |
+| **Agent Servers** | FastAPI + uvicorn | One service per agent · Python venv isolation |
+| **LLM Provider** | Ollama (local + cloud relay) | mistral · deepseek-coder:6.7b · gemma4:31b · deepseek-v3.2 |
+| **Database** | PostgreSQL 16 | `auth_db` + `tp_db` via Docker · JSON columns for nested TP data |
+| **Message Bus** | Apache Kafka | Topics defined · async pipeline (optional) |
+| **Containerization** | Docker Compose v2 | All 12 services · shared network · health checks |
 
 ---
 
-## 📁 Repository Structure
+## Repository Structure
 
 ```
 .
-├── frontend/        # Next.js student workspace + teacher dashboard
-├── backend/         # Spring Boot microservices (Auth + TP Management)
-├── agents/          # FastAPI Agent Gateway and the 3 AI agents
-├── rag-service/
-│   └── spring-ai-rag/   # Spring AI RAG ingestion + retrieval pipelines
-├── infra/           # Docker, Kubernetes manifests, deployment configs
-└── docs/            # Architecture diagrams and project documentation
+├── .env                        # All credentials and model names (root)
+├── start.sh                    # One-command local dev launcher
+├── test.sh                     # Integration test suite
+│
+├── agents/
+│   ├── explanation-agent/      # FastAPI + Mistral (LangGraph)
+│   │   ├── main.py
+│   │   └── tools/              # explain_tp.py · clarify_question.py
+│   ├── hint-agent/             # FastAPI + deepseek-coder:6.7b (LangGraph)
+│   │   ├── main.py
+│   │   └── tools/              # html_validator.py · hint_generator.py
+│   ├── evaluation-agent/       # FastAPI + gemma4:31b (LangGraph)
+│   │   ├── main.py
+│   │   └── tools/              # qcm_generator.py · evaluate_qcm.py
+│   └── orchestrator/           # FastAPI + deepseek-v3.2 (LangGraph)
+│       ├── main.py
+│       └── orchestrator.py
+│
+├── backend/
+│   ├── agent-gateway/          # FastAPI router — public AI endpoint
+│   ├── auth-service/           # Spring Boot 3 — JWT auth, user CRUD
+│   ├── tp-service/             # Spring Boot 3 — TP/Assignment/Progress
+│   ├── api-gateway/            # Spring Cloud Gateway — routing + JWT filter
+│   └── discovery-server/       # Eureka Server — service registry
+│
+├── frontend/
+│   ├── app/                    # Next.js pages (landing, login, student, teacher)
+│   ├── components/
+│   │   ├── agents/             # ExplanationChat.tsx · HintBox.tsx (real AI)
+│   │   ├── quiz/               # QuizComponent.tsx (AI-generated quiz)
+│   │   ├── IDELayout/          # Code editor + live preview + hint box
+│   │   └── TPExplanation/      # Step explanation + ExplanationChat
+│   └── services/
+│       ├── agentService.ts     # Typed client for all 4 agent endpoints
+│       └── tpService.ts        # TP/Progress CRUD with localStorage
+│
+└── infra/
+    ├── docker/
+    │   ├── docker-compose.yml  # All 12 services (Compose v2, no version key)
+    │   ├── docker-up.sh        # Wrapper script — resolves .env path
+    │   └── init-multi-db.sh    # Creates auth_db + tp_db on first boot
+    └── kafka/
+        └── kafka-config.yml    # Topic definitions (6 topics)
 ```
 
 ---
 
-## 🚀 Getting Started
+## Getting Started
 
 ### Prerequisites
-- **Node.js** ≥ 18 and `npm` / `pnpm`
-- **Java** 17+ and Maven
-- **Python** 3.10+
-- **Docker** and **docker-compose**
-- **PostgreSQL** with the `pgvector` extension
-- An **OpenAI** or **Anthropic** API key
 
-### Local Development
+| Tool | Version | Required |
+|------|---------|---------|
+| Node.js | ≥ 18 | Yes — frontend |
+| Python | ≥ 3.10 | Yes — agents |
+| Ollama | latest | Yes — LLMs |
+| Docker Desktop | latest | Yes — full stack |
+| Java 17 + Maven | ≥ 17 | Optional — Spring Boot |
+
+### Pull Ollama Models
 
 ```bash
-# 1. Clone the repo
-git clone https://github.com/embedding3x/enset-challenge-submission-embedding3x.git
-cd enset-challenge-submission-embedding3x
-
-# 2. Spin up the full stack with Docker Compose
-cd infra
-docker-compose up -d
-
-# 3. Install and run the frontend
-cd ../frontend
-npm install
-npm run dev
+ollama pull mistral
+ollama pull deepseek-coder:6.7b
+ollama pull gemma4:31b-cloud      # cloud relay — needs Ollama account
+ollama pull deepseek-v3.2:cloud   # cloud relay — needs Ollama account
 ```
 
-The frontend will be available at `http://localhost:3000`.
+### Option A — One-command local dev (recommended)
 
-> ⚠️ Configure your environment variables (LLM API keys, database URL, JWT secret) in the `.env` files of each service before running.
+```bash
+git clone <repo-url>
+cd enset-challenge-submission-embedding3x
+
+# Start all agents + frontend dev server (no Docker needed)
+./start.sh
+```
+
+`start.sh` automatically:
+1. Checks Python, Node.js, Ollama prerequisites
+2. Verifies required Ollama models are available
+3. Creates a shared Python `.venv` and installs all agent packages
+4. Installs frontend `node_modules` if needed
+5. Frees any occupied ports (8000–8004, 3000)
+6. Starts 5 Python services in background (one log file each in `logs/`)
+7. Starts Spring Boot services if Java + Maven are available
+8. Starts `next dev` for the frontend
+9. Polls all `/health` endpoints until ready
+10. Prints a live status dashboard
+
+```bash
+# After start.sh prints the status dashboard, run the test suite:
+./test.sh --quick --agents-only    # instant health checks only
+./test.sh --agents-only            # full LLM inference tests (2–5 min)
+```
+
+### Option B — Docker Compose (full stack)
+
+```bash
+cd infra/docker
+
+# Start agents only (no Java build time):
+./docker-up.sh agents
+
+# Start everything (builds all images — takes ~5 min first time):
+./docker-up.sh --build
+
+# Stop everything:
+./docker-up.sh down
+
+# Tail logs:
+./docker-up.sh logs explanation-agent
+
+# Show status:
+./docker-up.sh ps
+```
+
+> The wrapper script automatically passes `--env-file ../../.env` so all variables resolve correctly regardless of your working directory.
+
+### Environment Variables (`.env`)
+
+```bash
+# All models are served via local Ollama
+OLLAMA_BASE_URL=http://localhost:11434
+
+EXPLANATION_AGENT_MODEL=mistral
+HINT_AGENT_MODEL=deepseek-coder:6.7b
+EVALUATION_AGENT_MODEL=gemma4:31b-cloud
+ORCHESTRATOR_MODEL=deepseek-v3.2:cloud
+
+JWT_SECRET=<your-32+-character-secret>
+
+AUTH_DB_URL=jdbc:postgresql://localhost:5432/auth_db
+TP_DB_URL=jdbc:postgresql://localhost:5432/tp_db
+```
 
 ---
 
-## 👥 User Workflows
+## Service Endpoints
 
-### 🧑‍🏫 Teacher Workflow
-1. **Create TP** — write the assignment in HTML/Markdown, set duration, configure anti-cheat
-2. **Upload Materials** — lecture slides, notes, code references (ingested by RAG)
-3. **Publish TP** — share session link with students
-4. **Monitor Session** — live dashboard of student progress and hint usage
-5. **Review Reports** — per-student code, quiz performance, hint history, comprehension summary
-
-### 🧑‍🎓 Student Workflow
-1. **Phase 1 — Orientation** — Explanation Agent presents the assignment; the student can ask clarification questions before the timer starts
-2. **Phase 2 — Coding** — Monaco IDE with live HTML preview; copy-paste disabled; timer running
-3. **Phase 3 — Hint Request** — Hint Agent analyses current code and returns a progressive, targeted hint
-4. **Phase 4 — Submission** — final code snapshot saved
-5. **Phase 5 — Evaluation** — Evaluation Agent generates a 3–5 question quiz; auto-scored; report sent to teacher
+| Service | URL | Key Endpoints |
+|---------|-----|---------------|
+| Frontend | http://localhost:3000 | `/` · `/login` · `/student/tp/[id]` · `/teacher/dashboard` |
+| Agent Gateway | http://localhost:8000 | `/api/agents/explain` · `/hint` · `/generate-quiz` · `/evaluate` |
+| Explanation Agent | http://localhost:8001 | `POST /explain` · `GET /health` |
+| Hint Agent | http://localhost:8002 | `POST /hint` · `GET /health` |
+| Evaluation Agent | http://localhost:8003 | `POST /generate-quiz` · `POST /evaluate` |
+| Orchestrator | http://localhost:8004 | `POST /orchestrate` · `GET /health` |
+| Auth Service | http://localhost:8081 | `POST /api/auth/login` · `/register` · `GET /me` |
+| TP Service | http://localhost:8082 | `GET/POST /api/tps` · `/assignments` · `/progress` |
+| API Gateway | http://localhost:8080 | Routes all `/api/**` traffic |
+| Eureka | http://localhost:8761 | Service registry dashboard |
 
 ---
 
-## ✅ MVP Status
+## Student Workflow
+
+```
+Phase 1 — Explanation          Phase 2 — Coding              Phase 3 — Evaluation
+──────────────────────         ─────────────────────         ───────────────────────
+Explanation Agent               IDE with live preview         Evaluation Agent generates
+explains the TP step            (sandboxed iframe)            3–5 MCQ questions from
+using Mistral.                                                the student's own code
+                                Hint Agent (deepseek-         using gemma4:31b.
+Student asks follow-up          coder) provides               
+questions in the                progressive hints             Student answers quiz →
+ExplanationChat UI.             (4 levels) when               AI scores + gives
+                                student is stuck.             personalized feedback.
+Copy-paste disabled.            
+Timer running.                  Required HTML tags            Score sent to teacher.
+                                validated in real-time.       
+```
+
+---
+
+## Teacher Workflow
+
+1. **Create TP** — title, description, difficulty, estimated time, starter HTML, step instructions, required HTML tags per step, static quiz questions
+2. **Assign** — select students, set due date
+3. **Monitor** — student progress dashboard (steps completed, time spent, hints used)
+4. **Review** — per-student quiz score and AI-generated feedback
+
+---
+
+## Anti-Cheat Mechanisms
+
+| Mechanism | Implementation |
+|-----------|---------------|
+| Copy-paste disabled | `onPaste` / `onDrop` / `onContextMenu` → `e.preventDefault()` |
+| Drag-and-drop disabled | Same handler chain |
+| Right-click disabled | Prevents browser context menu |
+| Interpreter pattern validation | `TagExpression` + `AndExpression` checks required HTML tags |
+| Session timer | Per-step countdown, auto-saved every 5 seconds |
+| Hint tracking | Hint count persisted in progress record |
+
+---
+
+## Implementation Status
 
 | Feature | Status |
-| --- | --- |
-| User registration and JWT authentication | ✅ Complete |
-| Teacher TP creation interface | ✅ Complete |
-| Student workspace with Monaco IDE | ✅ Complete |
-| Live HTML preview panel (sandboxed iframe) | ✅ Complete |
-| Explanation Agent | ✅ Complete |
-| Hint Agent (code-aware) | ✅ Complete |
-| RAG ingestion + retrieval pipelines | ✅ Complete |
-| Copy-paste prevention | ✅ Complete |
-| Session countdown timer | ✅ Complete |
-| Evaluation Agent (quiz generation) | ✅ Complete |
-| Quiz scoring and report generation | ✅ Complete |
-| Teacher dashboard — student reports | 🟡 Partial |
-| Kafka async agent communication | 🟡 In Progress |
-| Full Kubernetes deployment manifests | 🟡 Partial |
+|---------|--------|
+| Frontend — student workspace (IDE, preview, timer) | ✅ Complete |
+| Frontend — teacher dashboard (create, assign, monitor) | ✅ Complete |
+| Frontend — agent UI (ExplanationChat, HintBox, QuizComponent) | ✅ Complete |
+| Explanation Agent (Mistral + LangGraph) | ✅ Complete |
+| Hint Agent (deepseek-coder:6.7b + LangGraph) | ✅ Complete |
+| Evaluation Agent (gemma4:31b + LangGraph) | ✅ Complete |
+| Orchestrator (deepseek-v3.2 + LangGraph) | ✅ Complete |
+| Agent Gateway (FastAPI router) | ✅ Complete |
+| Auth Service (JWT, BCrypt, Spring Security) | ✅ Complete |
+| TP Service (CRUD, JSON column storage) | ✅ Complete |
+| Spring Cloud Gateway (JWT filter, routing) | ✅ Complete |
+| Eureka Discovery Server | ✅ Complete |
+| Docker Compose (all 12 services) | ✅ Complete |
+| One-command start script (`start.sh`) | ✅ Complete |
+| Integration test suite (`test.sh`) | ✅ Complete |
+| Anti-cheat mechanisms | ✅ Complete |
+| Kafka topic configuration | ✅ Defined (async pipeline optional) |
+| pgvector / RAG service | 🟡 Structure created — ingestion pipeline not wired |
 
 ---
 
-## ⚠️ Current Limitations
+## Current Limitations
 
-- **HTML-only assignments** — backend languages (Python, Java) are not yet supported
-- **No code execution sandbox** — evaluation relies on the live preview and AI analysis
-- **LLM cost** — rate-limiting and caching strategies not yet implemented
-- **Synchronous Kafka pipeline** — fully async path partially implemented
-- **Limited anti-cheat** — copy-paste prevention can be bypassed via DevTools
-
----
-
-## 🔮 Roadmap
-
-### Short-Term (1–3 months)
-- Multi-language support via secure server-side execution sandbox (Judge0 / Piston)
-- Full Kafka integration for async agent communication
-- Real-time session monitoring with hint heatmaps and progress indicators
-- Hybrid search (keyword + semantic) and re-ranking in the RAG pipeline
-
-### Medium-Term (3–9 months)
-- Adaptive hint depth via reinforcement learning
-- Code similarity-based plagiarism detection across cohorts
-- LMS integration (Moodle, Blackboard, Canvas) via LTI
-- Offline mode using locally-hosted open-source LLMs
-
-### Long-Term Vision
-- Auto-generated TPs from learning objectives
-- Cross-session longitudinal student profiles
-- AI-guided structured peer review
+- **HTML-only assignments** — backend language support (Python, Java) requires a sandboxed executor
+- **No real-time teacher monitoring** — progress is pulled on page load, not pushed via WebSocket
+- **RAG pipeline** — vector store directory structure exists but document ingestion is not wired
+- **`gemma4:31b-cloud` availability** — requires an Ollama cloud account; quiz generation falls back to static questions if the model is not available
+- **Auth frontend** — login page still uses localStorage mock; connecting to the real auth-service requires updating `authService.ts`
 
 ---
 
-## 🏆 Innovation
+## Roadmap
 
-- **Multi-agent orchestration** in an educational context — three specialised agents instead of one monolithic AI
-- **Session-scoped RAG** — retrieval scoped to the active TP and course
-- **Code-aware hinting** — Hint Agent receives the student's live code as input
-- **Evaluation-by-construction** — quiz questions derived from the student's *own* code submission
+**Short-term**
+- Wire the RAG ingestion pipeline (Spring AI + pgvector) — directory structure is ready
+- Connect frontend auth to the real Auth Service JWT flow
+- WebSocket push for real-time teacher monitoring
+- Rate limiting and response caching for LLM calls
+
+**Medium-term**
+- Multi-language support via Judge0 / Piston execution sandbox
+- Kafka async agent communication (topics already defined)
+- Code similarity plagiarism detection across cohorts
+- Kubernetes manifests for production deployment
 
 ---
 
-## 📄 License
+## Innovation
 
-Hackathon submission — see the `docs/` folder for the full technical report.
+- **Model-per-agent** architecture — each agent runs a different LLM optimized for its task (coding hints → code model, explanations → instruction model, evaluation → reasoning model)
+- **LangGraph tool calling** — agents use structured tools that shape their outputs, not just raw prompting
+- **Graceful offline fallback** — all three frontend agent components (`ExplanationChat`, `HintBox`, `QuizComponent`) detect agent availability and fall back to deterministic local logic
+- **Interpreter pattern validation** — formal tag-expression tree validates required HTML elements with composable `AndExpression`/`TagExpression` nodes
+- **Code-aware evaluation** — quiz questions are generated from the student's *actual submitted code*, not generic TP content
 
 ---
 
-> ***Built with purpose. Grounded in knowledge. Guided by AI.***
-> *Agentic TP Platform — ENSET Hackathon 2025*
+## License
+
+Hackathon submission — ENSET Challenge 2025.
+
+---
+
+> *Built with purpose. Grounded in knowledge. Guided by AI.*
+> **Agentic TP Platform — embedding3x — ENSET Hackathon 2025**

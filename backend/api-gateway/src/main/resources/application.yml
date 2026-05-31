@@ -1,0 +1,84 @@
+spring:
+  application:
+    name: api-gateway
+  cloud:
+    gateway:
+      globalcors:
+        corsConfigurations:
+          '[/**]':
+            allowedOrigins:
+              - "http://localhost:3000"
+            allowedMethods:
+              - GET
+              - POST
+              - PUT
+              - DELETE
+              - PATCH
+              - OPTIONS
+            allowedHeaders:
+              - "*"
+            allowCredentials: true
+            maxAge: 3600
+      routes:
+        # Auth Service
+        - id: auth-service
+          uri: http://localhost:${AUTH_SERVICE_PORT:8081}
+          predicates:
+            - Path=/api/auth/**
+          filters:
+            - name: RequestRateLimiter
+
+        # TP Service — TPs
+        - id: tp-service-tps
+          uri: http://localhost:${TP_SERVICE_PORT:8082}
+          predicates:
+            - Path=/api/tps/**
+          filters:
+            - AuthFilter
+
+        # TP Service — Assignments
+        - id: tp-service-assignments
+          uri: http://localhost:${TP_SERVICE_PORT:8082}
+          predicates:
+            - Path=/api/assignments/**
+          filters:
+            - AuthFilter
+
+        # TP Service — Progress
+        - id: tp-service-progress
+          uri: http://localhost:${TP_SERVICE_PORT:8082}
+          predicates:
+            - Path=/api/progress/**
+          filters:
+            - AuthFilter
+
+        # Agent Gateway
+        - id: agent-gateway
+          uri: http://localhost:${AGENT_GATEWAY_PORT:8000}
+          predicates:
+            - Path=/api/agents/**
+          filters:
+            - AuthFilter
+
+server:
+  port: ${API_GATEWAY_PORT:8080}
+
+eureka:
+  client:
+    service-url:
+      defaultZone: ${EUREKA_SERVER_URL:http://localhost:8761/eureka}
+  instance:
+    prefer-ip-address: true
+
+jwt:
+  secret: ${JWT_SECRET:fallback-secret-change-in-production-minimum-32-chars-needed}
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info,gateway
+
+logging:
+  level:
+    org.springframework.cloud.gateway: INFO

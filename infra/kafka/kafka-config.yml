@@ -1,2 +1,45 @@
-# Kafka configuration
-# TODO: define Kafka topics and settings
+# Kafka topic configuration for the Agentic TP Platform
+topics:
+  - name: agent.explain.requests
+    partitions: 3
+    replication-factor: 1
+    config:
+      retention.ms: 86400000
+
+  - name: agent.hint.requests
+    partitions: 3
+    replication-factor: 1
+    config:
+      retention.ms: 86400000
+
+  - name: agent.evaluation.requests
+    partitions: 3
+    replication-factor: 1
+    config:
+      retention.ms: 86400000
+
+  - name: agent.responses
+    partitions: 3
+    replication-factor: 1
+    config:
+      retention.ms: 3600000
+
+  - name: progress.updates
+    partitions: 3
+    replication-factor: 1
+    config:
+      retention.ms: 604800000
+
+  - name: quiz.completed
+    partitions: 3
+    replication-factor: 1
+    config:
+      retention.ms: 604800000
+
+consumer-groups:
+  - id: agentic-tp-group
+    topics:
+      - agent.responses
+      - progress.updates
+
+bootstrap-servers: ${KAFKA_BOOTSTRAP_SERVERS:localhost:9092}

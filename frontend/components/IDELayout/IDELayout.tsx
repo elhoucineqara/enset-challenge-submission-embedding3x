@@ -1,8 +1,9 @@
 "use client";
 
 import React, { useState, useEffect, useCallback, useRef } from "react";
-import CodeEditor from "@/components/Editor/CodeEditor";
+import CodeEditor from "@/components/editor/CodeEditor";
 import LivePreview from "@/components/Preview/LivePreview";
+import HintBox from "@/components/agents/HintBox";
 import { TPStep, ValidationResult, TPProgress } from "@/types";
 import { createValidatorForStep } from "@/patterns/InterpreterPattern";
 import { tpService } from "@/services/tpService";
@@ -150,6 +151,16 @@ export default function IDELayout({
         <div className="flex-1 flex flex-col overflow-hidden p-2">
           <LivePreview html={code} />
         </div>
+      </div>
+
+      {/* AI Hint Box */}
+      <div className="mx-4 mb-2">
+        <HintBox
+          step={step}
+          studentCode={code}
+          hintsUsed={hintsUsed}
+          onHintUsed={() => setHintsUsed((prev) => prev + 1)}
+        />
       </div>
 
       {/* Validation feedback */}

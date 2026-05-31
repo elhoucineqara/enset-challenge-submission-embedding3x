@@ -1,7 +1,316 @@
-version: "3.9"
+# ─────────────────────────────────────────────────────────────────────────────
+# Agentic TP Platform — Full Stack Docker Compose (Compose v2)
+#
+# IMPORTANT: Run from the infra/docker/ directory via the wrapper:
+#   ./docker-up.sh          (start all, detached)
+#   ./docker-up.sh --build  (rebuild images first)
+#   ./docker-up.sh down     (stop everything)
+#
+# Or from project root:
+#   docker compose --env-file .env -f infra/docker/docker-compose.yml up -d
+#
+# Ollama runs on the HOST machine. All agent containers reach it via:
+#   http://host.docker.internal:11434
+# ─────────────────────────────────────────────────────────────────────────────
+
+networks:
+  agentic-net:
+    driver: bridge
+
+volumes:
+  postgres-data:
+  kafka-data:
+
+# All services that need the root .env at BUILD or RUN time inherit from here.
+x-env-defaults: &env-defaults
+  env_file:
+    - ../../.env
+
+# Extra host so Docker containers can reach Ollama on the Mac host
+x-ollama-host: &ollama-host
+  extra_hosts:
+    - "host.docker.internal:host-gateway"
+
 services:
-  # TODO: define services
+
+  # ─── Infrastructure ─────────────────────────────────────────────────────────
+
+  postgres:
+    image: postgres:16-alpine
+    container_name: agentic-postgres
+    restart: unless-stopped
+    networks: [agentic-net]
+    environment:
+      POSTGRES_USER: ${AUTH_DB_USERNAME:-postgres}
+      POSTGRES_PASSWORD: ${AUTH_DB_PASSWORD:-postgres}
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+      - ./init-multi-db.sh:/docker-entrypoint-initdb.d/init-multi-db.sh
+    ports:
+      - "5432:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${AUTH_DB_USERNAME:-postgres}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  zookeeper:
+    image: confluentinc/cp-zookeeper:7.6.1
+    container_name: agentic-zookeeper
+    networks: [agentic-net]
+    environment:
+      ZOOKEEPER_CLIENT_PORT: 2181
+      ZOOKEEPER_TICK_TIME: 2000
+    ports:
+      - "2181:2181"
+
+  kafka:
+    image: confluentinc/cp-kafka:7.6.1
+    container_name: agentic-kafka
+    depends_on: [zookeeper]
+    networks: [agentic-net]
+    environment:
+      KAFKA_BROKER_ID: 1
+      KAFKA_ZOOKEEPER_CONNECT: zookeeper:2181
+      KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://kafka:9092,PLAINTEXT_HOST://localhost:29092
+      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: PLAINTEXT:PLAINTEXT,PLAINTEXT_HOST:PLAINTEXT
+      KAFKA_INTER_BROKER_LISTENER_NAME: PLAINTEXT
+      KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
+    ports:
+      - "9092:9092"
+      - "29092:29092"
+    volumes:
+      - kafka-data:/var/lib/kafka/data
+
+  # ─── Spring Cloud: Service Discovery ────────────────────────────────────────
+
+  discovery-server:
+    build:
+      context: ../../backend/discovery-server
+      dockerfile: Dockerfile
+    container_name: discovery-server
+    networks: [agentic-net]
+    ports:
+      - "8761:8761"
+    environment:
+      EUREKA_SERVER_PORT: 8761
+    healthcheck:
+      test: ["CMD-SHELL", "curl -sf http://localhost:8761/actuator/health || exit 1"]
+      interval: 20s
+      timeout: 10s
+      retries: 5
+      start_period: 40s
+
+  # ─── Spring Boot: Auth Service ───────────────────────────────────────────────
+
+  auth-service:
+    build:
+      context: ../../backend/auth-service
+      dockerfile: Dockerfile
+    container_name: auth-service
+    <<: *env-defaults
+    depends_on:
+      postgres:
+        condition: service_healthy
+      discovery-server:
+        condition: service_healthy
+    networks: [agentic-net]
+    ports:
+      - "8081:8081"
+    environment:
+      AUTH_SERVICE_PORT: 8081
+      AUTH_DB_URL: jdbc:postgresql://postgres:5432/auth_db
+      AUTH_DB_USERNAME: ${AUTH_DB_USERNAME:-postgres}
+      AUTH_DB_PASSWORD: ${AUTH_DB_PASSWORD:-postgres}
+      JWT_SECRET: ${JWT_SECRET:-fallback-secret-change-in-production-minimum-32-chars}
+      JWT_EXPIRATION_MS: ${JWT_EXPIRATION_MS:-86400000}
+      EUREKA_SERVER_URL: http://discovery-server:8761/eureka
+    healthcheck:
+      test: ["CMD-SHELL", "curl -sf http://localhost:8081/api/auth/health || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 60s
+
+  # ─── Spring Boot: TP Service ─────────────────────────────────────────────────
+
+  tp-service:
+    build:
+      context: ../../backend/tp-service
+      dockerfile: Dockerfile
+    container_name: tp-service
+    <<: *env-defaults
+    depends_on:
+      postgres:
+        condition: service_healthy
+      discovery-server:
+        condition: service_healthy
+    networks: [agentic-net]
+    ports:
+      - "8082:8082"
+    environment:
+      TP_SERVICE_PORT: 8082
+      TP_DB_URL: jdbc:postgresql://postgres:5432/tp_db
+      TP_DB_USERNAME: ${TP_DB_USERNAME:-postgres}
+      TP_DB_PASSWORD: ${TP_DB_PASSWORD:-postgres}
+      JWT_SECRET: ${JWT_SECRET:-fallback-secret-change-in-production-minimum-32-chars}
+      EUREKA_SERVER_URL: http://discovery-server:8761/eureka
+
+  # ─── Spring Cloud: API Gateway ───────────────────────────────────────────────
+
+  api-gateway:
+    build:
+      context: ../../backend/api-gateway
+      dockerfile: Dockerfile
+    container_name: api-gateway
+    <<: *env-defaults
+    depends_on:
+      auth-service:
+        condition: service_healthy
+      discovery-server:
+        condition: service_healthy
+    networks: [agentic-net]
+    ports:
+      - "8080:8080"
+    environment:
+      API_GATEWAY_PORT: 8080
+      AUTH_SERVICE_PORT: 8081
+      TP_SERVICE_PORT: 8082
+      AGENT_GATEWAY_PORT: 8000
+      JWT_SECRET: ${JWT_SECRET:-fallback-secret-change-in-production-minimum-32-chars}
+      EUREKA_SERVER_URL: http://discovery-server:8761/eureka
+
+  # ─── AI Agents (all connect to Ollama on the host) ───────────────────────────
+
+  explanation-agent:
+    build:
+      context: ../../agents/explanation-agent
+      dockerfile: Dockerfile
+    container_name: explanation-agent
+    <<: [*env-defaults, *ollama-host]
+    networks: [agentic-net]
+    ports:
+      - "8001:8001"
+    environment:
+      EXPLANATION_AGENT_PORT: 8001
+      OLLAMA_BASE_URL: http://host.docker.internal:11434
+    healthcheck:
+      test: ["CMD-SHELL", "python -c \"from urllib.request import urlopen; urlopen('http://localhost:8001/health')\" || exit 1"]
+      interval: 20s
+      timeout: 10s
+      retries: 3
+      start_period: 15s
+
+  hint-agent:
+    build:
+      context: ../../agents/hint-agent
+      dockerfile: Dockerfile
+    container_name: hint-agent
+    <<: [*env-defaults, *ollama-host]
+    networks: [agentic-net]
+    ports:
+      - "8002:8002"
+    environment:
+      HINT_AGENT_PORT: 8002
+      OLLAMA_BASE_URL: http://host.docker.internal:11434
+    healthcheck:
+      test: ["CMD-SHELL", "python -c \"from urllib.request import urlopen; urlopen('http://localhost:8002/health')\" || exit 1"]
+      interval: 20s
+      timeout: 10s
+      retries: 3
+      start_period: 15s
+
+  evaluation-agent:
+    build:
+      context: ../../agents/evaluation-agent
+      dockerfile: Dockerfile
+    container_name: evaluation-agent
+    <<: [*env-defaults, *ollama-host]
+    networks: [agentic-net]
+    ports:
+      - "8003:8003"
+    environment:
+      EVALUATION_AGENT_PORT: 8003
+      OLLAMA_BASE_URL: http://host.docker.internal:11434
+    healthcheck:
+      test: ["CMD-SHELL", "python -c \"from urllib.request import urlopen; urlopen('http://localhost:8003/health')\" || exit 1"]
+      interval: 20s
+      timeout: 10s
+      retries: 3
+      start_period: 15s
+
+  orchestrator:
+    build:
+      context: ../../agents/orchestrator
+      dockerfile: Dockerfile
+    container_name: orchestrator
+    <<: [*env-defaults, *ollama-host]
+    depends_on:
+      - explanation-agent
+      - hint-agent
+      - evaluation-agent
+    networks: [agentic-net]
+    ports:
+      - "8004:8004"
+    environment:
+      ORCHESTRATOR_PORT: 8004
+      OLLAMA_BASE_URL: http://host.docker.internal:11434
+      EXPLANATION_AGENT_URL: http://explanation-agent:8001
+      HINT_AGENT_URL: http://hint-agent:8002
+      EVALUATION_AGENT_URL: http://evaluation-agent:8003
+    healthcheck:
+      test: ["CMD-SHELL", "python -c \"from urllib.request import urlopen; urlopen('http://localhost:8004/health')\" || exit 1"]
+      interval: 20s
+      timeout: 10s
+      retries: 3
+      start_period: 15s
+
+  # ─── Agent Gateway ────────────────────────────────────────────────────────────
+
+  agent-gateway:
+    build:
+      context: ../../backend/agent-gateway
+      dockerfile: Dockerfile
+    container_name: agent-gateway
+    <<: *env-defaults
+    depends_on:
+      explanation-agent:
+        condition: service_healthy
+      hint-agent:
+        condition: service_healthy
+      evaluation-agent:
+        condition: service_healthy
+      orchestrator:
+        condition: service_healthy
+    networks: [agentic-net]
+    ports:
+      - "8000:8000"
+    environment:
+      AGENT_GATEWAY_PORT: 8000
+      EXPLANATION_AGENT_URL: http://explanation-agent:8001
+      HINT_AGENT_URL: http://hint-agent:8002
+      EVALUATION_AGENT_URL: http://evaluation-agent:8003
+      ORCHESTRATOR_PORT: 8004
+    healthcheck:
+      test: ["CMD-SHELL", "python -c \"from urllib.request import urlopen; urlopen('http://localhost:8000/health')\" || exit 1"]
+      interval: 20s
+      timeout: 10s
+      retries: 3
+      start_period: 15s
+
+  # ─── Frontend ─────────────────────────────────────────────────────────────────
+
   frontend:
-    build: ../../frontend
+    build:
+      context: ../../frontend
+      dockerfile: Dockerfile
+    container_name: frontend
+    depends_on:
+      agent-gateway:
+        condition: service_healthy
+    networks: [agentic-net]
     ports:
       - "3000:3000"
+    environment:
+      NEXT_PUBLIC_API_BASE_URL: http://localhost:8080
+      NEXT_PUBLIC_AGENT_GATEWAY_URL: http://localhost:8000
