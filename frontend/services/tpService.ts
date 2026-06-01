@@ -1,4 +1,4 @@
-import { TP, TPProgress, Assignment, StepProgress } from "@/types";
+import { TP, TPProgress, Assignment, StepProgress, Evaluation } from "@/types";
 import { mockTPs } from "@/data/mockTPs";
 import { mockAssignments } from "@/data/mockAssignments";
 
@@ -129,6 +129,7 @@ export const tpService = {
           code: "",
           timeSpentSeconds: 0,
           hintsUsed: 0,
+          hintHistory: [],
           validationErrors: [],
           completed: false,
         })
@@ -140,6 +141,112 @@ export const tpService = {
     };
     this.saveProgress(progress);
     return progress;
+  },
+
+    ONLINE_WINDOW_SECONDS: 120,
+
+  
+  touchActivity(studentId: string, tpId: string, stepIndex?: number, code?: string): void {
+    const prog = this.getProgress(studentId, tpId);
+    if (!prog) return;
+    const updated: TPProgress = {
+      ...prog,
+      lastActiveAt: new Date().toISOString(),
+      steps:
+        stepIndex !== undefined && code !== undefined
+          ? prog.steps.map((s, i) => (i === stepIndex ? { ...s, code } : s))
+          : prog.steps,
+    };
+    this.saveProgress(updated);
+  },
+
+  isOnline(progress: TPProgress | null | undefined): boolean {
+    if (!progress?.lastActiveAt) return false;
+    const last = new Date(progress.lastActiveAt).getTime();
+    return Date.now() - last <= this.ONLINE_WINDOW_SECONDS * 1000;
+  },
+
+ 
+  getBestCode(progress: TPProgress | null | undefined): string {
+    if (!progress) return "";
+    for (let i = progress.steps.length - 1; i >= 0; i--) {
+      const c = progress.steps[i]?.code?.trim();
+      if (c) return progress.steps[i].code;
+    }
+    return "";
+  },
+
+  
+  evaluateStudent(progress: TPProgress | null | undefined, tp: TP): Evaluation {
+    if (!progress || progress.status === "not_started") {
+      return {
+        points: 0,
+        grade: "—",
+        factors: [
+          { label: "Time", score: 0, max: 30, detail: "Not started" },
+          { label: "Hints", score: 0, max: 30, detail: "Not started" },
+          { label: "Code format", score: 0, max: 40, detail: "No code submitted" },
+        ],
+      };
+    }
+
+    const estimateSec = Math.max(60, tp.estimatedMinutes * 60);
+    const actualSec = Math.max(1, progress.totalTimeSeconds);
+    const timeScore = Math.round(30 * Math.min(1, estimateSec / actualSec));
+    const overBy = Math.max(0, actualSec - estimateSec);
+    const timeDetail =
+      overBy === 0
+        ? `${Math.round(actualSec / 60)}m — within the ${tp.estimatedMinutes}m estimate`
+        : `${Math.round(actualSec / 60)}m — ${Math.round(overBy / 60)}m over the ${tp.estimatedMinutes}m estimate`;
+
+    const hintsUsed = progress.steps.reduce((s, st) => s + (st.hintsUsed ?? 0), 0);
+    const allowed = Math.max(1, progress.steps.length * 2);
+    const hintScore = Math.round(30 * Math.max(0, 1 - hintsUsed / allowed));
+    const hintDetail = `${hintsUsed} hint${hintsUsed === 1 ? "" : "s"} used`;
+
+    const code = this.getBestCode(progress);
+    const requiredTags = Array.from(
+      new Set(tp.steps.flatMap((s) => s.requiredTags ?? []))
+    );
+    const present = requiredTags.filter((t) =>
+      new RegExp(`<${t}[\\s>/]`, "i").test(code)
+    );
+    const coverage = requiredTags.length
+      ? present.length / requiredTags.length
+      : code.trim()
+      ? 1
+      : 0;
+    const coverageScore = Math.round(20 * coverage);
+
+    let formatScore = 0;
+    if (/<!doctype html>/i.test(code)) formatScore += 4;
+    if (/\n[ \t]+\S/.test(code)) formatScore += 4; // some indentation
+    const opens = (code.match(/<[a-zA-Z][^>]*[^/]>/g) ?? []).length;
+    const closes = (code.match(/<\/[a-zA-Z]+>/g) ?? []).length;
+    if (opens > 0 && closes > 0 && Math.abs(opens - closes) <= 2) formatScore += 6; // roughly balanced
+    if (code.trim().length > 80) formatScore += 6; // not just the empty starter
+    formatScore = Math.min(20, formatScore);
+
+    const codeScore = coverageScore + formatScore;
+    const codeDetail = requiredTags.length
+      ? `${present.length}/${requiredTags.length} required tags · formatting ${formatScore}/20`
+      : code.trim()
+      ? `formatting ${formatScore}/20`
+      : "No code submitted";
+
+    const points = Math.min(100, timeScore + hintScore + codeScore);
+    const grade =
+      points >= 90 ? "A" : points >= 75 ? "B" : points >= 60 ? "C" : points >= 45 ? "D" : "F";
+
+    return {
+      points,
+      grade,
+      factors: [
+        { label: "Time", score: timeScore, max: 30, detail: timeDetail },
+        { label: "Hints", score: hintScore, max: 30, detail: hintDetail },
+        { label: "Code format", score: codeScore, max: 40, detail: codeDetail },
+      ],
+    };
   },
 
   // ─── AI Explanation ─────────────────────────────────────────────────────────

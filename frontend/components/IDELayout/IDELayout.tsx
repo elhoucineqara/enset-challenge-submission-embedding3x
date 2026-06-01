@@ -4,7 +4,7 @@ import React, { useState, useEffect, useCallback, useRef } from "react";
 import CodeEditor from "@/components/editor/CodeEditor";
 import LivePreview from "@/components/Preview/LivePreview";
 import HintBox from "@/components/agents/HintBox";
-import { TPStep, ValidationResult, TPProgress } from "@/types";
+import { TPStep, ValidationResult, TPProgress, HintHistoryEntry } from "@/types";
 import { createValidatorForStep } from "@/patterns/InterpreterPattern";
 import { tpService } from "@/services/tpService";
 
@@ -15,6 +15,7 @@ interface IDELayoutProps {
   progress: TPProgress;
   starterHTML: string;
   onStepComplete: (code: string, timeSeconds: number, hints: number) => void;
+  onProgressUpdate: (updated: TPProgress) => void;
 }
 
 export default function IDELayout({
@@ -24,6 +25,7 @@ export default function IDELayout({
   progress,
   starterHTML,
   onStepComplete,
+  onProgressUpdate,
 }: IDELayoutProps) {
   const stepProgress = progress.steps[stepIndex];
   const [code, setCode] = useState(
@@ -37,19 +39,27 @@ export default function IDELayout({
   const [showHints, setShowHints] = useState(false);
   const timerRef = useRef<NodeJS.Timeout | null>(null);
 
+  const codeRef = useRef(code);
+  codeRef.current = code;
+
   // ── Step timer ──────────────────────────────────────────────────────────────
   useEffect(() => {
     timerRef.current = setInterval(() => {
       setTimeSeconds((prev) => {
         const next = prev + 1;
-        // Persist time every 5 seconds
+       
         if (next % 5 === 0) {
-          const updated = { ...progress };
-          updated.steps[stepIndex] = {
-            ...updated.steps[stepIndex],
-            timeSpentSeconds: next,
+          const updated: TPProgress = {
+            ...progress,
+            lastActiveAt: new Date().toISOString(),
+            steps: progress.steps.map((s, i) =>
+              i === stepIndex
+                ? { ...s, timeSpentSeconds: next, code: codeRef.current }
+                : s
+            ),
           };
           tpService.saveProgress(updated);
+          onProgressUpdate(updated);
         }
         return next;
       });
@@ -66,21 +76,32 @@ export default function IDELayout({
     return `${m}:${sec}`;
   };
 
+  const handleHintUsed = useCallback((entry: HintHistoryEntry) => {
+    const next = hintsUsed + 1;
+    setHintsUsed(next);
+    const updated: TPProgress = {
+      ...progress,
+      steps: progress.steps.map((s, i) =>
+        i === stepIndex
+          ? { ...s, hintsUsed: next, hintHistory: [...(s.hintHistory ?? []), entry] }
+          : s
+      ),
+    };
+    tpService.saveProgress(updated);
+    onProgressUpdate(updated);
+  }, [hintsUsed, progress, stepIndex, onProgressUpdate]);
+
   // ── Validate ────────────────────────────────────────────────────────────────
   const handleValidate = useCallback(() => {
-    const validator = createValidatorForStep(step.requiredTags);
+    const validator = createValidatorForStep(step.requiredTags ?? []);
     const result = validator.validate(code);
     setValidation(result);
-
-    if (!result.valid) {
-      setHintsUsed((prev) => prev + 1);
-      setShowHints(true);
-    }
+    if (!result.valid) setShowHints(true);
   }, [code, step.requiredTags]);
 
   // ── Submit step ─────────────────────────────────────────────────────────────
   const handleSubmit = useCallback(() => {
-    const validator = createValidatorForStep(step.requiredTags);
+    const validator = createValidatorForStep(step.requiredTags ?? []);
     const result = validator.validate(code);
     setValidation(result);
 
@@ -88,13 +109,12 @@ export default function IDELayout({
       if (timerRef.current) clearInterval(timerRef.current);
       onStepComplete(code, timeSeconds, hintsUsed);
     } else {
-      setHintsUsed((prev) => prev + 1);
       setShowHints(true);
     }
   }, [code, step.requiredTags, timeSeconds, hintsUsed, onStepComplete]);
 
   return (
-    <div className="flex flex-col h-full bg-[#1a1a2e]">
+    <div className="flex flex-col min-h-full bg-[#1a1a2e]">
       {/* Top bar */}
       <div className="flex items-center justify-between px-4 py-2 bg-[#16213e] border-b border-[#0f3460] shrink-0">
         <div className="flex items-center gap-3">
@@ -129,7 +149,7 @@ export default function IDELayout({
         </p>
         <p className="text-xs text-[#6c7086] mt-1">
           Required elements:{" "}
-          {step.requiredTags.map((t) => (
+          {(step.requiredTags ?? []).map((t) => (
             <code
               key={t}
               className="mx-0.5 px-1 rounded bg-[#1a1a2e] text-[#cba6f7]"
@@ -140,8 +160,7 @@ export default function IDELayout({
         </p>
       </div>
 
-      {/* Split screen */}
-      <div className="flex flex-1 overflow-hidden gap-0.5">
+      <div className="flex flex-1 min-h-[240px] overflow-hidden gap-0.5">
         {/* Left: Editor */}
         <div className="flex-1 flex flex-col overflow-hidden p-2">
           <CodeEditor value={code} onChange={setCode} />
@@ -154,18 +173,19 @@ export default function IDELayout({
       </div>
 
       {/* AI Hint Box */}
-      <div className="mx-4 mb-2">
+      <div className="mx-4 mb-2 shrink-0">
         <HintBox
           step={step}
           studentCode={code}
           hintsUsed={hintsUsed}
-          onHintUsed={() => setHintsUsed((prev) => prev + 1)}
+          initialHints={stepProgress?.hintHistory ?? []}
+          onHintUsed={handleHintUsed}
         />
       </div>
 
       {/* Validation feedback */}
       {validation && !validation.valid && showHints && (
-        <div className="mx-4 mb-3 p-3 bg-[#2d1b1b] border border-[#f38ba8] rounded-lg">
+        <div className="mx-4 mb-3 p-3 bg-[#2d1b1b] border border-[#f38ba8] rounded-lg shrink-0">
           <p className="text-sm font-semibold text-[#f38ba8] mb-2">
             ❌ Validation failed
           </p>
@@ -181,7 +201,7 @@ export default function IDELayout({
       )}
 
       {validation?.valid && (
-        <div className="mx-4 mb-3 p-3 bg-[#1b2d1b] border border-[#a6e3a1] rounded-lg">
+        <div className="mx-4 mb-3 p-3 bg-[#1b2d1b] border border-[#a6e3a1] rounded-lg shrink-0">
           <p className="text-sm font-semibold text-[#a6e3a1]">
             ✅ Looks good! Click Submit to continue.
           </p>

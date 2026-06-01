@@ -43,11 +43,19 @@ export interface Assignment {
 }
 
 // ─── Student Progress ─────────────────────────────────────────────────────────
+export interface HintHistoryEntry {
+  level: number;
+  text: string;
+  missingTags: string[];
+  timestamp: string;
+}
+
 export interface StepProgress {
   stepId: string;
   code: string;
   timeSpentSeconds: number;
   hintsUsed: number;
+  hintHistory: HintHistoryEntry[];
   validationErrors: string[];
   completed: boolean;
   completedAt?: string;
@@ -66,6 +74,20 @@ export interface TPProgress {
   status: "not_started" | "in_progress" | "completed";
   startedAt?: string;
   completedAt?: string;
+  lastActiveAt?: string; 
+}
+
+export interface EvaluationFactor {
+  label: string;
+  score: number;
+  max: number; 
+  detail: string; 
+}
+
+export interface Evaluation {
+  points: number; 
+  grade: string;
+  factors: EvaluationFactor[];
 }
 
 // ─── Quiz ─────────────────────────────────────────────────────────────────────

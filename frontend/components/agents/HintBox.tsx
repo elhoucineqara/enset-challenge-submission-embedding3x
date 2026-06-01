@@ -1,22 +1,16 @@
 "use client";
 
 import React, { useState } from "react";
-import { TPStep } from "@/types";
+import { TPStep, HintHistoryEntry } from "@/types";
 import { agentService, HintResponse } from "@/services/agentService";
 
 interface HintBoxProps {
   step: TPStep;
   studentCode: string;
   hintsUsed: number;
-  onHintUsed: () => void;
+  initialHints?: HintHistoryEntry[];
+  onHintUsed: (entry: HintHistoryEntry) => void;
   sessionId?: string;
-}
-
-interface HintEntry {
-  level: number;
-  text: string;
-  missingTags: string[];
-  timestamp: string;
 }
 
 const LEVEL_LABELS: Record<number, string> = {
@@ -37,44 +31,48 @@ export default function HintBox({
   step,
   studentCode,
   hintsUsed,
+  initialHints = [],
   onHintUsed,
   sessionId,
 }: HintBoxProps) {
-  const [hints, setHints] = useState<HintEntry[]>([]);
+  const [hints, setHints] = useState<HintHistoryEntry[]>(initialHints);
   const [isLoading, setIsLoading] = useState(false);
-  const [error, setError] = useState<string | null>(null);
   const [validationPassed, setValidationPassed] = useState(false);
   const [missingTags, setMissingTags] = useState<string[]>([]);
   const [expanded, setExpanded] = useState(true);
 
+  const requiredTags = step.requiredTags ?? [];
   const maxHints = 5;
   const canRequestHint = hintsUsed < maxHints && !validationPassed;
 
   async function requestHint() {
     if (isLoading || !canRequestHint) return;
     setIsLoading(true);
-    setError(null);
 
     try {
       let response: HintResponse;
 
       const available = await agentService.isAvailable();
       if (available) {
-        response = await agentService.getHint({
-          step_id: step.id,
-          step_title: step.title,
-          step_instructions: step.instructions,
-          student_code: studentCode,
-          required_tags: step.requiredTags,
-          hints_already_given: hintsUsed,
-          previous_hints: hints.map((h) => h.text),
-          session_id: sessionId,
-        });
+        try {
+          response = await agentService.getHint({
+            step_id: step.id,
+            step_title: step.title,
+            step_instructions: step.instructions,
+            student_code: studentCode,
+            required_tags: requiredTags,
+            hints_already_given: hintsUsed,
+            previous_hints: hints.map((h) => h.text),
+            session_id: sessionId,
+          });
+        } catch {
+          response = buildFallbackHint(step, studentCode, hintsUsed);
+        }
       } else {
         response = buildFallbackHint(step, studentCode, hintsUsed);
       }
 
-      const newHint: HintEntry = {
+      const newHint: HintHistoryEntry = {
         level: response.hint_level,
         text: response.hint,
         missingTags: response.missing_tags,
@@ -84,9 +82,18 @@ export default function HintBox({
       setHints((prev) => [...prev, newHint]);
       setValidationPassed(response.validation_passed);
       setMissingTags(response.missing_tags);
-      onHintUsed();
-    } catch (err) {
-      setError("Could not get a hint right now. Check that the AI agents are running.");
+      onHintUsed(newHint);
+    } catch {
+      const fallback = buildFallbackHint(step, studentCode, hintsUsed);
+      const newHint: HintHistoryEntry = {
+        level: fallback.hint_level,
+        text: fallback.hint,
+        missingTags: fallback.missing_tags,
+        timestamp: new Date().toLocaleTimeString(),
+      };
+      setHints((prev) => [...prev, newHint]);
+      setMissingTags(fallback.missing_tags);
+      onHintUsed(newHint);
     } finally {
       setIsLoading(false);
     }
@@ -111,7 +118,7 @@ export default function HintBox({
 
         {/* Tags status */}
         <div className="hidden sm:flex items-center gap-1">
-          {step.requiredTags.map((tag) => {
+          {requiredTags.map((tag) => {
             const missing = missingTags.includes(tag);
             return (
               <span
@@ -181,15 +188,6 @@ export default function HintBox({
             </div>
           )}
 
-          {/* Error */}
-          {error && (
-            <div className="px-4 py-2">
-              <p className="text-xs text-[#f38ba8] bg-[#f38ba8]/10 rounded-lg px-3 py-2">
-                {error}
-              </p>
-            </div>
-          )}
-
           {/* Request hint button */}
           <div className="px-4 py-3">
             {canRequestHint ? (
@@ -233,7 +231,7 @@ function buildFallbackHint(
   hintsUsed: number
 ): HintResponse {
   const code = studentCode.toLowerCase();
-  const missing = step.requiredTags.filter(
+  const missing = (step.requiredTags ?? []).filter(
     (tag) => !code.includes(`<${tag}`)
   );
 
