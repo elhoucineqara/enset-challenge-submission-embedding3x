@@ -253,8 +253,9 @@ print('\n'.join(names))
 
     if [ ! -d "$VENV" ]; then
         info "Creating shared virtual environment at .venv ..."
-        python3 -m venv "$VENV"
-        ok "Virtual environment created"
+        PYTHON_BIN=$(command -v python3.13 || command -v python3.12 || command -v python3)
+        "$PYTHON_BIN" -m venv "$VENV"
+        ok "Virtual environment created ($(\"$VENV/bin/python\" --version))"
     else
         ok "Virtual environment exists (.venv/)"
     fi
@@ -324,6 +325,8 @@ print('\n'.join(names))
         start_spring "discovery-server" "discovery-server" "8761"
         info "Waiting for Eureka to be ready (this can take ~30s)..."
         if wait_for_health "discovery-server" "http://localhost:8761/actuator/health" 90; then
+            info "Giving Eureka 10s to fully initialize before accepting registrations..."
+            sleep 10
             start_spring "auth-service" "auth-service" "8081"
             start_spring "tp-service"   "tp-service"   "8082"
             info "Waiting for auth-service..."
@@ -352,6 +355,8 @@ print('\n'.join(names))
     # ── 11. Health checks ──────────────────────────────────────────────────────
     section "Waiting for Services to be Ready"
 
+    wait_for_health "tp-service"        "http://localhost:8082/api/tp/health"       60 || true
+    wait_for_health "api-gateway"       "http://localhost:8080/api/gateway/health"  60 || true
     wait_for_health "agent-gateway"     "http://localhost:8000/health" 60 || true
     wait_for_health "explanation-agent" "http://localhost:8001/health" 60 || true
     wait_for_health "hint-agent"        "http://localhost:8002/health" 60 || true
@@ -378,8 +383,8 @@ print('\n'.join(names))
     if [ "$JAVA_OK" = true ]; then
         show_status "discovery-server" "http://localhost:8761/actuator/health" "8761"
         show_status "auth-service"     "http://localhost:8081/api/auth/health" "8081"
-        show_status "tp-service"       "http://localhost:8082/actuator/health" "8082"
-        show_status "api-gateway"      "http://localhost:8080/actuator/health" "8080"
+        show_status "tp-service"       "http://localhost:8082/api/tp/health" "8082"
+        show_status "api-gateway"      "http://localhost:8080/api/gateway/health" "8080"
     else
         echo -e "  ${YELLOW}●${NC} Spring Boot services skipped (Java/Maven not available)"
     fi
