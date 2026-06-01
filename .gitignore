@@ -1,1 +1,13 @@
 .env
+.env
+/logs
+/__pycache__
+*.pyc
+*.pyo
+*.pyd
+.idea
+.vscode
+target/
+.running_pids
+.venv/
+venv/
