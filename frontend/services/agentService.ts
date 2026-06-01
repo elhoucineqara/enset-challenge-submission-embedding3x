@@ -114,6 +114,44 @@ export interface EvaluateAnswersRequest {
   student_code: string;
 }
 
+// ── Generate TP ───────────────────────────────────────────────────────────────
+
+export interface GenerateTPRequest {
+  prompt: string;
+  difficulty: string;
+  step_count: number;
+  language: string;
+  file_names?: string[];
+  course_ids?: string[];
+}
+
+export interface GenerateTPResponse {
+  tp: {
+    id: string;
+    title: string;
+    description: string;
+    difficulty: string;
+    estimatedMinutes: number;
+    starterHTML: string;
+    steps: Array<{
+      id: string;
+      title: string;
+      instructions: string;
+      requiredTags: string[];
+      quiz: Array<{
+        id: string;
+        question: string;
+        options: { id: string; text: string }[];
+        correctId: string;
+        explanation: string;
+      }>;
+    }>;
+  };
+  agent: string;
+  model: string;
+  used_rag: boolean;
+}
+
 export interface EvaluateAnswersResponse {
   score: number;
   correct: number;
@@ -165,6 +203,14 @@ export const agentService = {
    */
   async evaluate(req: EvaluateAnswersRequest): Promise<EvaluateAnswersResponse> {
     return post<EvaluateAnswersResponse>("/api/agents/evaluate", req);
+  },
+
+  /**
+   * Ask the AI agent to generate a full TP environment from a prompt or uploaded files.
+   * Falls back gracefully when the backend is unavailable.
+   */
+  async generateTP(req: GenerateTPRequest): Promise<GenerateTPResponse> {
+    return post<GenerateTPResponse>("/api/agents/generate-tp", req);
   },
 
   /**

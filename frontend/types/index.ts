@@ -23,6 +23,7 @@ export interface TP {
   id: string;
   title: string;
   description: string;
+  field: string; 
   difficulty: "beginner" | "intermediate" | "advanced";
   estimatedMinutes: number;
   starterHTML: string;

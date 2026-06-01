@@ -7,6 +7,7 @@ export const mockTPs: TP[] = [
     title: "My First HTML Page",
     description:
       "Build a complete HTML page with a title, a paragraph of text, and an interactive button.",
+    field: "Développement Web",
     difficulty: "beginner",
     estimatedMinutes: 20,
     createdBy: userIds.teacher1,
@@ -122,6 +123,7 @@ export const mockTPs: TP[] = [
     title: "HTML Forms Basics",
     description:
       "Create an HTML form with inputs, labels, and a submit button.",
+    field: "Développement Web",
     difficulty: "intermediate",
     estimatedMinutes: 35,
     createdBy: userIds.teacher1,
@@ -213,6 +215,7 @@ export const mockTPs: TP[] = [
     title: "CSS Styling Fundamentals",
     description:
       "Style an HTML page using both inline styles and a <style> block.",
+    field: "Design & CSS",
     difficulty: "beginner",
     estimatedMinutes: 25,
     createdBy: userIds.teacher2,
