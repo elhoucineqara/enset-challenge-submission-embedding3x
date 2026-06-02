@@ -250,6 +250,7 @@ export default function CreateTPPage() {
 
   const [title, setTitle] = useState("");
   const [description, setDescription] = useState("");
+  const [field, setField] = useState("Développement Web");
   const [difficulty, setDifficulty] = useState<TP["difficulty"]>("beginner");
   const [estimatedMinutes, setEstimatedMinutes] = useState(20);
   const [starterHTML, setStarterHTML] = useState(
@@ -274,6 +275,7 @@ export default function CreateTPPage() {
       id: uid(),
       title,
       description,
+      field: field.trim() || "Général",
       difficulty,
       estimatedMinutes,
       starterHTML,
@@ -343,6 +345,24 @@ export default function CreateTPPage() {
             className="w-full bg-[#1e1e2e] rounded-xl px-4 py-2.5 text-[#a6adc8] text-sm outline-none focus:ring-1 focus:ring-[#cba6f7] border border-[#313244] resize-none placeholder:text-[#45475a]"
             placeholder="Short description for students..."
           />
+          <div>
+            <label className="text-xs text-[#6c7086] block mb-1">
+              Field / Module
+            </label>
+            <input
+              value={field}
+              onChange={(e) => setField(e.target.value)}
+              list="tp-field-options"
+              className="w-full bg-[#1e1e2e] rounded-xl px-3 py-2 text-white text-sm outline-none border border-[#313244] focus:ring-1 focus:ring-[#cba6f7] placeholder:text-[#45475a]"
+              placeholder="e.g. Développement Web"
+            />
+            <datalist id="tp-field-options">
+              <option value="Développement Web" />
+              <option value="Design & CSS" />
+              <option value="JavaScript" />
+              <option value="Base de données" />
+            </datalist>
+          </div>
           <div className="flex gap-4">
             <div className="flex-1">
               <label className="text-xs text-[#6c7086] block mb-1">

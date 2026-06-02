@@ -271,7 +271,7 @@ export default function StudentTPPage() {
         </nav>
 
         {/* IDE */}
-        <div className="flex-1 overflow-hidden">
+        <div className="flex-1 overflow-y-auto min-h-0">
           <IDELayout
             step={currentStep}
             stepIndex={stepIndex}
@@ -279,6 +279,7 @@ export default function StudentTPPage() {
             progress={progress}
             starterHTML={tp.starterHTML}
             onStepComplete={handleStepComplete}
+            onProgressUpdate={setProgress}
           />
         </div>
       </div>
