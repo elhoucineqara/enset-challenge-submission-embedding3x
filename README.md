@@ -1,3 +1,18 @@
+<div align="center">
+
+## Project Report & Presentation
+
+<a href="report-presentation/Agentic_TP_Presentation.pptx">
+    <img src="https://img.shields.io/badge/Open%20Presentation-Click%20to%20View-0f62fe?style=for-the-badge&logo=microsoftpowerpoint&logoColor=white" alt="Open Presentation" />
+</a>
+
+<a href="report-presentation/Rapport_Agentic_TP_Plateforme.pdf">
+    <img src="https://img.shields.io/badge/Open%20PDF%20Report-Click%20to%20View-d1495b?style=for-the-badge&logo=adobeacrobatreader&logoColor=white" alt="Open PDF Report" />
+</a>
+
+
+</div>
+
 # Agentic TP Platform
 
 > **AI-Powered Educational Platform for Programming Practicals**
