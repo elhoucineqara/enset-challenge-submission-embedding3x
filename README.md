@@ -19,65 +19,68 @@ The **Agentic TP Platform** transforms how students complete practical programmi
 
 ## System Architecture
 
-```
-┌────────────────────────────────────────────────────────────────┐
-│                    FRONTEND  (Next.js 14)                      │
-│            Student Workspace  ·  Teacher Dashboard             │
-└───────────────────────────┬────────────────────────────────────┘
-                            │  HTTP  (port 3000)
-                            ▼
-┌────────────────────────────────────────────────────────────────┐
-│              Spring Cloud API Gateway  (port 8080)             │
-│                  JWT AuthFilter · CORS · Routing               │
-└──────────┬─────────────────┬──────────────────────────────────┘
-           │                 │
-           ▼                 ▼
-┌──────────────────┐  ┌──────────────────┐
-│  Auth Service    │  │   TP Service     │
-│  Spring Boot     │  │   Spring Boot    │
-│  Port 8081       │  │   Port 8082      │
-│  JWT · BCrypt    │  │   TPs · Progress │
-│  PostgreSQL      │  │   PostgreSQL     │
-└──────────────────┘  └──────────────────┘
-           │
-           ▼
-┌─────────────────────────────────────────────────┐
-│           Eureka Discovery Server (8761)         │
-│          Service registry for Spring Cloud       │
-└─────────────────────────────────────────────────┘
+```mermaid
+graph TD
+    subgraph Client["🖥️ Client Layer"]
+        FE["Next.js 14 Frontend<br/>Student Workspace · Teacher Dashboard<br/>:3000"]
+    end
 
-┌────────────────────────────────────────────────────────────────┐
-│               Agent Gateway  FastAPI  (port 8000)              │
-│         Routes /explain · /hint · /generate-quiz · /evaluate   │
-└──────────┬──────────────┬───────────────┬──────────────────────┘
-           │              │               │
-           ▼              ▼               ▼
-┌─────────────────┐ ┌─────────────────┐ ┌─────────────────┐
-│ Explanation     │ │   Hint Agent    │ │  Evaluation     │
-│ Agent  :8001    │ │   :8002         │ │  Agent  :8003   │
-│                 │ │                 │ │                 │
-│ mistral         │ │ deepseek-coder  │ │ gemma4:31b      │
-│ (local Ollama)  │ │ 6.7b (Ollama)   │ │ (cloud via      │
-│                 │ │                 │ │  Ollama)        │
-└─────────────────┘ └─────────────────┘ └─────────────────┘
-                                │
-                                ▼
-                    ┌─────────────────────┐
-                    │   Orchestrator      │
-                    │   :8004             │
-                    │                    │
-                    │ deepseek-v3.2:cloud │
-                    │ (LangGraph routing) │
-                    └─────────────────────┘
-                                │
-                    ┌───────────┴───────────┐
-                    ▼                       ▼
-             ┌────────────┐        ┌────────────────┐
-             │  Ollama    │        │   PostgreSQL   │
-             │  :11434    │        │   :5432        │
-             │  (host)    │        │   auth_db      │
-             └────────────┘        │   tp_db        │
-                                   └────────────────┘
+    subgraph SpringCloud["☕ Spring Cloud Backend"]
+        GW["API Gateway<br/>JWT AuthFilter · CORS · Routing<br/>:8080"]
+        AUTH["Auth Service<br/>JWT · BCrypt<br/>:8081"]
+        TP["TP Service<br/>TPs · Assignments · Progress<br/>:8082"]
+        EUREKA["Eureka Discovery Server<br/>Service Registry<br/>:8761"]
+    end
+
+    subgraph AgentLayer["🤖 Agentic Layer (FastAPI + LangGraph)"]
+        AGW["Agent Gateway<br/>explain · hint · quiz · evaluate<br/>orchestrate · generate-tp · courses<br/>:8000"]
+        EXP["Explanation Agent<br/>mistral · :8001"]
+        HINT["Hint Agent<br/>deepseek-coder:6.7b · :8002"]
+        EVAL["Evaluation Agent<br/>gemma4:31b-cloud · :8003"]
+        ORCH["Orchestrator<br/>deepseek-v3.2:cloud · :8004"]
+    end
+
+    subgraph Infra["🗄️ Infrastructure"]
+        OLLAMA["Ollama Runtime<br/>:11434"]
+        PG[("PostgreSQL<br/>auth_db · tp_db<br/>:5432")]
+        KAFKA["Apache Kafka<br/>(async pipeline)"]
+    end
+
+    FE -->|REST /api/**| GW
+    FE -->|REST /api/agents/**| AGW
+
+    GW --> AUTH
+    GW --> TP
+    AUTH -.register.-> EUREKA
+    TP -.register.-> EUREKA
+    GW -.register.-> EUREKA
+    AUTH --> PG
+    TP --> PG
+
+    AGW --> EXP
+    AGW --> HINT
+    AGW --> EVAL
+    AGW --> ORCH
+
+    ORCH -->|delegates| EXP
+    ORCH -->|delegates| HINT
+    ORCH -->|delegates| EVAL
+
+    EXP --> OLLAMA
+    HINT --> OLLAMA
+    EVAL --> OLLAMA
+    ORCH --> OLLAMA
+
+    AGW -.events.-> KAFKA
+
+    classDef frontend fill:#cba6f7,stroke:#6c7086,color:#11111b
+    classDef spring fill:#a6e3a1,stroke:#6c7086,color:#11111b
+    classDef agent fill:#89b4fa,stroke:#6c7086,color:#11111b
+    classDef infra fill:#f9e2af,stroke:#6c7086,color:#11111b
+    class FE frontend
+    class GW,AUTH,TP,EUREKA spring
+    class AGW,EXP,HINT,EVAL,ORCH agent
+    class OLLAMA,PG,KAFKA infra
 ```
 
 ---
@@ -105,6 +108,182 @@ All agents use **LangGraph** (`create_react_agent`) with real tools. Each connec
 - **Model:** `deepseek-v3.2:cloud` (cloud via Ollama)
 - **Port:** 8004 → `POST /orchestrate`
 - **Role:** Handles complex requests that span multiple agents. Uses LangGraph to decide which agent(s) to invoke in sequence. Tools: `call_explanation_agent`, `call_hint_agent`, `call_evaluation_agent_quiz`, `call_evaluation_agent_score`.
+
+---
+
+## Agent Class Diagram (UML)
+
+Every agent shares the same structural blueprint: a FastAPI app, a `ChatOllama` LLM, a LangGraph `create_react_agent`, a system prompt, and a typed tool set. They differ only in model, temperature, tools, and endpoints.
+
+```mermaid
+classDiagram
+    class FastAPIAgent {
+        <<abstract>>
+        +FastAPI app
+        +str SYSTEM_PROMPT
+        +ChatOllama llm
+        +list~Tool~ tools
+        +get_llm() ChatOllama
+        +health() dict
+        #create_react_agent(llm, tools, state_modifier)
+    }
+
+    class ExplanationAgent {
+        +model mistral
+        +temperature 0.7
+        +port 8001
+        +explain(ExplainRequest) ExplainResponse
+    }
+
+    class HintAgent {
+        +model deepseek-coder:6.7b
+        +temperature 0.3
+        +port 8002
+        +get_hint(HintRequest) HintResponse
+    }
+
+    class EvaluationAgent {
+        +model gemma4:31b-cloud
+        +temperature 0.4
+        +port 8003
+        +generate_quiz(GenerateQuizRequest) GenerateQuizResponse
+        +evaluate_answers(EvaluateAnswersRequest) EvaluateAnswersResponse
+    }
+
+    class Orchestrator {
+        +model deepseek-v3.2:cloud
+        +temperature 0.2
+        +port 8004
+        +orchestrate(OrchestrateRequest) OrchestrateResponse
+    }
+
+    class Tool {
+        <<interface>>
+        +name str
+        +description str
+        +invoke(args) str
+    }
+
+    FastAPIAgent <|-- ExplanationAgent
+    FastAPIAgent <|-- HintAgent
+    FastAPIAgent <|-- EvaluationAgent
+    FastAPIAgent <|-- Orchestrator
+
+    ExplanationAgent ..> Tool : 4 explain/clarify tools
+    HintAgent ..> Tool : 4 validate/hint tools
+    EvaluationAgent ..> Tool : 4 quiz/score tools
+    Orchestrator ..> Tool : 4 call_*_agent tools
+```
+
+---
+
+## LangGraph ReAct Loop (per agent)
+
+Each specialized agent is built with `create_react_agent(llm, tools, state_modifier=SYSTEM_PROMPT)`. At runtime LangGraph runs the standard **reason → act → observe** loop: the LLM either calls a tool or emits the final answer, looping until no more tool calls are requested.
+
+```mermaid
+stateDiagram-v2
+    [*] --> START
+    START --> Agent : HumanMessage (request + context)
+    Agent --> ToolNode : LLM emits tool_call(s)
+    ToolNode --> Agent : ToolMessage (observation)
+    Agent --> END : LLM emits final answer (no tool_call)
+    END --> [*]
+
+    note right of Agent
+        ChatOllama bound to tools
+        + SYSTEM_PROMPT (state_modifier)
+    end note
+    note right of ToolNode
+        Executes the selected @tool
+        e.g. validate_html_tags,
+        build_quiz_generation_prompt
+    end note
+```
+
+---
+
+## Orchestrator Routing Graph (LangGraph)
+
+The Orchestrator is itself a ReAct agent whose tools are *HTTP calls to the other agents*. The `deepseek-v3.2:cloud` model reads the request intent and delegates to the correct downstream agent, then returns its response.
+
+```mermaid
+graph TD
+    REQ["POST /orchestrate<br/>action + context"] --> ORCH{{"Orchestrator ReAct Agent<br/>deepseek-v3.2:cloud"}}
+
+    ORCH -->|"explain / clarify / what is"| T1["call_explanation_agent"]
+    ORCH -->|"hint / stuck / help with code"| T2["call_hint_agent"]
+    ORCH -->|"generate quiz / create questions"| T3["call_evaluation_agent_quiz"]
+    ORCH -->|"evaluate / score / check answers"| T4["call_evaluation_agent_score"]
+
+    T1 -->|"HTTP POST /explain"| A1["Explanation Agent :8001"]
+    T2 -->|"HTTP POST /hint"| A2["Hint Agent :8002"]
+    T3 -->|"HTTP POST /generate-quiz"| A3["Evaluation Agent :8003"]
+    T4 -->|"HTTP POST /evaluate"| A3
+
+    A1 --> RESP["Aggregated JSON response"]
+    A2 --> RESP
+    A3 --> RESP
+    RESP --> ORCH
+    ORCH --> OUT["OrchestrateResponse"]
+
+    classDef agent fill:#89b4fa,stroke:#6c7086,color:#11111b
+    classDef tool fill:#f9e2af,stroke:#6c7086,color:#11111b
+    class ORCH,A1,A2,A3 agent
+    class T1,T2,T3,T4 tool
+```
+
+---
+
+## Request Flow — Three-Phase Student Session (Sequence)
+
+```mermaid
+sequenceDiagram
+    actor S as Student
+    participant FE as Frontend (Next.js)
+    participant AGW as Agent Gateway :8000
+    participant EXP as Explanation Agent (mistral)
+    participant HINT as Hint Agent (deepseek-coder)
+    participant EVAL as Evaluation Agent (gemma4:31b)
+    participant OL as Ollama :11434
+
+    rect rgb(238,228,250)
+    Note over S,OL: Phase 1 — Explanation
+    S->>FE: Open TP step / ask question
+    FE->>AGW: POST /api/agents/explain
+    AGW->>EXP: POST /explain
+    EXP->>OL: ReAct loop (tools + mistral)
+    OL-->>EXP: explanation (Socratic, no code)
+    EXP-->>FE: ExplainResponse
+    end
+
+    rect rgb(224,235,253)
+    Note over S,OL: Phase 2 — Coding
+    S->>FE: Write HTML / request hint
+    FE->>AGW: POST /api/agents/hint
+    AGW->>HINT: POST /hint
+    HINT->>OL: validate tags + progressive hint
+    OL-->>HINT: one level-N hint
+    HINT-->>FE: HintResponse (hint_level, missing_tags)
+    end
+
+    rect rgb(228,245,226)
+    Note over S,OL: Phase 3 — Evaluation
+    S->>FE: Submit completed TP
+    FE->>AGW: POST /api/agents/generate-quiz
+    AGW->>EVAL: POST /generate-quiz
+    EVAL->>OL: quiz grounded in student code
+    OL-->>EVAL: MCQ[] JSON
+    EVAL-->>FE: questions
+    S->>FE: Answer quiz
+    FE->>AGW: POST /api/agents/evaluate
+    AGW->>EVAL: POST /evaluate
+    EVAL->>EVAL: calculate_quiz_score (deterministic)
+    EVAL->>OL: generate_feedback_summary
+    OL-->>EVAL: personalized feedback
+    EVAL-->>FE: score + grade + breakdown
+    end
+```
 
 ---
 
@@ -156,14 +335,21 @@ All agents use **LangGraph** (`create_react_agent`) with real tools. Each connec
 │   └── discovery-server/       # Eureka Server — service registry
 │
 ├── frontend/
-│   ├── app/                    # Next.js pages (landing, login, student, teacher)
+│   ├── app/                    # Next.js pages
+│   │   ├── login/              # Auth (localStorage mock)
+│   │   ├── student/            # dashboard · tp/[id] · result
+│   │   └── teacher/            # dashboard · create-tp (+agent) · assign-tp
+│   │       ├── courses/        #   course upload + RAG indexing UI
+│   │       └── student-evaluation/  # per-student quiz score review
 │   ├── components/
 │   │   ├── agents/             # ExplanationChat.tsx · HintBox.tsx (real AI)
 │   │   ├── quiz/               # QuizComponent.tsx (AI-generated quiz)
 │   │   ├── IDELayout/          # Code editor + live preview + hint box
 │   │   └── TPExplanation/      # Step explanation + ExplanationChat
+│   ├── patterns/
+│   │   └── InterpreterPattern/ # Tag-expression tree for HTML validation
 │   └── services/
-│       ├── agentService.ts     # Typed client for all 4 agent endpoints
+│       ├── agentService.ts     # Typed client for all agent endpoints (incl. generate-tp)
 │       └── tpService.ts        # TP/Progress CRUD with localStorage
 │
 └── infra/
@@ -273,7 +459,7 @@ TP_DB_URL=jdbc:postgresql://localhost:5432/tp_db
 | Service | URL | Key Endpoints |
 |---------|-----|---------------|
 | Frontend | http://localhost:3000 | `/` · `/login` · `/student/tp/[id]` · `/teacher/dashboard` |
-| Agent Gateway | http://localhost:8000 | `/api/agents/explain` · `/hint` · `/generate-quiz` · `/evaluate` |
+| Agent Gateway | http://localhost:8000 | `/api/agents/explain` · `/hint` · `/generate-quiz` · `/evaluate` · `/orchestrate` · `/generate-tp` · `/courses` · `/courses/upload` · `/agents/health` |
 | Explanation Agent | http://localhost:8001 | `POST /explain` · `GET /health` |
 | Hint Agent | http://localhost:8002 | `POST /hint` · `GET /health` |
 | Evaluation Agent | http://localhost:8003 | `POST /generate-quiz` · `POST /evaluate` |
@@ -294,13 +480,13 @@ Explanation Agent               IDE with live preview         Evaluation Agent g
 explains the TP step            (sandboxed iframe)            3–5 MCQ questions from
 using Mistral.                                                the student's own code
                                 Hint Agent (deepseek-         using gemma4:31b.
-Student asks follow-up          coder) provides               
+Student asks follow-up          coder) provides
 questions in the                progressive hints             Student answers quiz →
 ExplanationChat UI.             (4 levels) when               AI scores + gives
                                 student is stuck.             personalized feedback.
-Copy-paste disabled.            
+Copy-paste disabled.
 Timer running.                  Required HTML tags            Score sent to teacher.
-                                validated in real-time.       
+                                validated in real-time.
 ```
 
 ---
