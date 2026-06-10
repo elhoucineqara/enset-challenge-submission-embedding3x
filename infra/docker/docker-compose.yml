@@ -36,7 +36,7 @@ services:
   # ─── Infrastructure ─────────────────────────────────────────────────────────
 
   postgres:
-    image: postgres:16-alpine
+    image: pgvector/pgvector:pg16
     container_name: agentic-postgres
     restart: unless-stopped
     networks: [agentic-net]
@@ -272,8 +272,10 @@ services:
       context: ../../backend/agent-gateway
       dockerfile: Dockerfile
     container_name: agent-gateway
-    <<: *env-defaults
+    <<: [*env-defaults, *ollama-host]
     depends_on:
+      postgres:
+        condition: service_healthy
       explanation-agent:
         condition: service_healthy
       hint-agent:
@@ -291,6 +293,9 @@ services:
       HINT_AGENT_URL: http://hint-agent:8002
       EVALUATION_AGENT_URL: http://evaluation-agent:8003
       ORCHESTRATOR_PORT: 8004
+      RAG_DATABASE_URL: postgresql://${AUTH_DB_USERNAME:-postgres}:${AUTH_DB_PASSWORD:-postgres}@postgres:5432/rag_db
+      OLLAMA_BASE_URL: http://host.docker.internal:11434
+      RAG_EMBED_MODEL: ${RAG_EMBED_MODEL:-nomic-embed-text}
     healthcheck:
       test: ["CMD-SHELL", "python -c \"from urllib.request import urlopen; urlopen('http://localhost:8000/health')\" || exit 1"]
       interval: 20s

@@ -17,6 +17,8 @@ const C = {
 };
 
 const COURSES_KEY = "agentic_tp_courses";
+const AGENT_BASE =
+  process.env.NEXT_PUBLIC_AGENT_GATEWAY_URL ?? "http://localhost:8000";
 
 interface Course {
   id: string;
@@ -117,11 +119,27 @@ export default function CoursesPage() {
   const inputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
-    if (typeof window === "undefined") return;
-    const raw = localStorage.getItem(COURSES_KEY);
-    if (raw) {
-      try { setCourses(JSON.parse(raw)); } catch { /* ignore */ }
-    }
+    let cancelled = false;
+    (async () => {
+      // Source of truth is the backend vector store; localStorage is just a cache.
+      try {
+        const res = await fetch(`${AGENT_BASE}/api/agents/courses`);
+        if (res.ok) {
+          const data = await res.json();
+          if (!cancelled && Array.isArray(data.courses)) {
+            saveCourses(data.courses as Course[]);
+            return;
+          }
+        }
+      } catch { /* fall back to cache below */ }
+      if (cancelled || typeof window === "undefined") return;
+      const raw = localStorage.getItem(COURSES_KEY);
+      if (raw) {
+        try { setCourses(JSON.parse(raw)); } catch { /* ignore */ }
+      }
+    })();
+    return () => { cancelled = true; };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   const saveCourses = (list: Course[]) => {
@@ -129,36 +147,27 @@ export default function CoursesPage() {
     if (typeof window !== "undefined") localStorage.setItem(COURSES_KEY, JSON.stringify(list));
   };
 
-  const simulateIndexing = (id: string) => {
-    const delay = 1800 + Math.random() * 1500;
-    const chunks = Math.floor(20 + Math.random() * 120);
-    setTimeout(() => {
-      setCourses((prev) => {
-        const updated = prev.map((c) =>
-          c.id === id ? { ...c, status: "indexed" as const, chunks } : c
-        );
-        if (typeof window !== "undefined") localStorage.setItem(COURSES_KEY, JSON.stringify(updated));
-        return updated;
-      });
-    }, delay);
+  const upsert = (list: Course[], course: Course): Course[] => {
+    const idx = list.findIndex((c) => c.id === course.id);
+    if (idx >= 0) { const copy = [...list]; copy[idx] = course; return copy; }
+    return [...list, course];
   };
 
   const addFiles = useCallback(async (list: FileList) => {
     setUploading(true);
-    const AGENT_BASE = process.env.NEXT_PUBLIC_AGENT_GATEWAY_URL ?? "http://localhost:8000";
 
-    const incoming: Course[] = Array.from(list).map((f) => ({
+    const fileArray = Array.from(list);
+    // Show optimistic "indexing" rows while the backend embeds the documents.
+    const incoming: Course[] = fileArray.map((f) => ({
       id: `course-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
       name: f.name,
       size: f.size,
       uploadedAt: new Date().toISOString(),
       status: "indexing" as const,
     }));
+    let working = [...courses, ...incoming];
+    saveCourses(working);
 
-    const updated = [...courses, ...incoming];
-    saveCourses(updated);
-
-    const fileArray = Array.from(list);
     for (let i = 0; i < fileArray.length; i++) {
       const file = fileArray[i];
       const courseId = incoming[i].id;
@@ -166,13 +175,20 @@ export default function CoursesPage() {
         const formData = new FormData();
         formData.append("file", file);
         formData.append("course_id", courseId);
-        await fetch(`${AGENT_BASE}/api/agents/courses/upload`, {
+        const res = await fetch(`${AGENT_BASE}/api/agents/courses/upload`, {
           method: "POST",
           body: formData,
         });
+        if (res.ok) {
+          const { course } = await res.json();
+          working = upsert(working, course as Course);
+        } else {
+          working = upsert(working, { ...incoming[i], status: "error" });
+        }
       } catch {
+        working = upsert(working, { ...incoming[i], status: "error" });
       }
-      simulateIndexing(courseId);
+      saveCourses(working);
     }
 
     setUploading(false);
@@ -184,14 +200,32 @@ export default function CoursesPage() {
     if (e.dataTransfer.files?.length) addFiles(e.dataTransfer.files);
   };
 
-  const deleteCourse = (id: string) => {
+  const deleteCourse = async (id: string) => {
     saveCourses(courses.filter((c) => c.id !== id));
+    try {
+      await fetch(`${AGENT_BASE}/api/agents/courses/${id}`, { method: "DELETE" });
+    } catch { /* already removed from UI */ }
   };
 
-  const reindex = (id: string) => {
-    const updated = courses.map((c) => c.id === id ? { ...c, status: "indexing" as const, chunks: undefined } : c);
-    saveCourses(updated);
-    simulateIndexing(id);
+  const reindex = async (id: string) => {
+    saveCourses(courses.map((c) => c.id === id ? { ...c, status: "indexing" as const, chunks: undefined } : c));
+    try {
+      const res = await fetch(`${AGENT_BASE}/api/agents/courses/${id}/reindex`, { method: "POST" });
+      if (res.ok) {
+        const { course } = await res.json();
+        setCourses((prev) => {
+          const updated = upsert(prev, course as Course);
+          if (typeof window !== "undefined") localStorage.setItem(COURSES_KEY, JSON.stringify(updated));
+          return updated;
+        });
+        return;
+      }
+    } catch { /* fall through to error state */ }
+    setCourses((prev) => {
+      const updated = prev.map((c) => c.id === id ? { ...c, status: "error" as const } : c);
+      if (typeof window !== "undefined") localStorage.setItem(COURSES_KEY, JSON.stringify(updated));
+      return updated;
+    });
   };
 
   const filtered = courses.filter((c) =>

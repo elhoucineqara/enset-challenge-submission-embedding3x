@@ -5,7 +5,7 @@ export interface User {
   id: string;
   name: string;
   email: string;
-  password: string; // plain-text for mock only
+  password?: string; // legacy mock field; real auth uses JWT, not stored passwords
   role: UserRole;
   avatarInitials: string;
 }

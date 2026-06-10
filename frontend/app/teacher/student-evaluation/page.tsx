@@ -5,6 +5,7 @@ import Link from "next/link";
 import { useAuth } from "@/contexts/AuthContext";
 import { useRouter } from "next/navigation";
 import { tpService } from "@/services/tpService";
+import { subscribeProgress } from "@/services/realtimeService";
 import { TP, Evaluation } from "@/types";
 import { mockUsers } from "@/data/mockUsers";
 import { X, Code2, Clock, Lightbulb, Trophy, BookOpen, Layers } from "lucide-react";
@@ -199,10 +200,21 @@ export default function StudentEvaluationPage() {
     setFields(result);
   }, [isTeacher, user, router, tick]);
 
+  // Live updates: ingest progress pushed over WebSocket and recompute the view.
   useEffect(() => {
-    const id = setInterval(() => setTick((t) => t + 1), 15000);
-    return () => clearInterval(id);
-  }, []);
+    if (!isTeacher) return;
+    const unsubscribe = subscribeProgress((progress) => {
+      tpService.applyRemoteProgress(progress);
+      setTick((t) => t + 1);
+    });
+    // Light fallback refresh keeps "online/offline" presence accurate if the
+    // socket is unavailable.
+    const id = setInterval(() => setTick((t) => t + 1), 30000);
+    return () => {
+      unsubscribe();
+      clearInterval(id);
+    };
+  }, [isTeacher]);
 
   const totals = useMemo(() => {
     const rows = fields.flatMap((f) => f.tps.flatMap((t) => t.students));

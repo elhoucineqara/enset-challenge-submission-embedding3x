@@ -1,6 +1,7 @@
 import { TP, TPProgress, Assignment, StepProgress, Evaluation } from "@/types";
 import { mockTPs } from "@/data/mockTPs";
 import { mockAssignments } from "@/data/mockAssignments";
+import { publishProgress } from "./realtimeService";
 
 const PROGRESS_KEY = "agentic_tp_progress";
 const ASSIGNMENTS_KEY = "agentic_tp_assignments";
@@ -98,7 +99,7 @@ export const tpService = {
     );
   },
 
-  saveProgress(progress: TPProgress): void {
+  saveProgress(progress: TPProgress, broadcast = true): void {
     const all = this.getAllProgress();
     const idx = all.findIndex((p) => p.id === progress.id);
     if (idx >= 0) {
@@ -109,6 +110,16 @@ export const tpService = {
     if (typeof window !== "undefined") {
       localStorage.setItem(PROGRESS_KEY, JSON.stringify(all));
     }
+    // Push the change to any live teacher dashboard. The teacher's ingest path
+    // calls this with broadcast=false to avoid an echo loop.
+    if (broadcast) {
+      publishProgress(progress);
+    }
+  },
+
+  /** Apply a progress snapshot received from the realtime channel (no re-broadcast). */
+  applyRemoteProgress(progress: TPProgress): void {
+    this.saveProgress(progress, false);
   },
 
   createProgress(

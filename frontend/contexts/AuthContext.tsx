@@ -36,7 +36,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   const login = useCallback(
     async (email: string, password: string): Promise<boolean> => {
-      const loggedIn = authService.login(email, password);
+      const loggedIn = await authService.login(email, password);
       if (loggedIn) {
         setUser(loggedIn);
         if (loggedIn.role === "teacher") {
