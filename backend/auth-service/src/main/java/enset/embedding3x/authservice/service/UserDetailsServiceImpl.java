@@ -13,9 +13,15 @@ public class UserDetailsServiceImpl implements UserDetailsService {
 
     private final UserRepository userRepository;
 
+    /**
+     * Resolves a principal by email first (login uses email), then by username
+     * (JWTs carry the username as subject). Supporting both keeps login and the
+     * JWT auth filter consistent.
+     */
     @Override
-    public UserDetails loadUserByUsername(String email) throws UsernameNotFoundException {
-        return userRepository.findByEmail(email)
-                .orElseThrow(() -> new UsernameNotFoundException("User not found: " + email));
+    public UserDetails loadUserByUsername(String principal) throws UsernameNotFoundException {
+        return userRepository.findByEmail(principal)
+                .or(() -> userRepository.findByUsername(principal))
+                .orElseThrow(() -> new UsernameNotFoundException("User not found: " + principal));
     }
 }

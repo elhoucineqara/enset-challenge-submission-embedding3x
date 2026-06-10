@@ -20,18 +20,29 @@ export default function StudentDashboardPage() {
 
   useEffect(() => {
     if (!isStudent) { router.push("/login"); return; }
+    let cancelled = false;
 
-    const assignments = tpService.getAssignmentsForStudent(user!.id);
-    const allTPs = tpService.getAllTPs();
+    (async () => {
+      const [assignments, allTPs] = await Promise.all([
+        tpService.getAssignmentsForStudent(user!.id),
+        tpService.getAllTPs(),
+      ]);
 
-    const data: TPCard[] = assignments.flatMap((a) => {
-      const tp = allTPs.find((t) => t.id === a.tpId);
-      if (!tp) return [];
-      const progress = tpService.getProgress(user!.id, tp.id);
-      return [{ tp, assignment: a, progress }];
-    });
+      const data: TPCard[] = (
+        await Promise.all(
+          assignments.map(async (a) => {
+            const tp = allTPs.find((t) => t.id === a.tpId);
+            if (!tp) return null;
+            const progress = await tpService.getProgress(user!.id, tp.id);
+            return { tp, assignment: a, progress } as TPCard;
+          })
+        )
+      ).filter((c): c is TPCard => c !== null);
 
-    setCards(data);
+      if (!cancelled) setCards(data);
+    })();
+
+    return () => { cancelled = true; };
   }, [isStudent, user, router]);
 
   const getStatusLabel = (p: TPProgress | null) => {

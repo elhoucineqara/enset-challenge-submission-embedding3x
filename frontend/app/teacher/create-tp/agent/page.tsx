@@ -512,15 +512,16 @@ export default function AgentTPCreatorPage() {
     }).catch(() => {});
   };
 
-  const handlePublish = () => {
+  const handlePublish = async () => {
     if (!tp) return;
     // eslint-disable-next-line @typescript-eslint/no-unused-vars
     const { antiCheat: _, ...tpData } = tp;
-    tpService.saveTP({
+    const created = await tpService.saveTP({
       ...tpData,
       field: tpData.field ?? "Développement Web",
       difficulty: tpData.difficulty as "beginner" | "intermediate" | "advanced",
     });
+    if (!created) { alert("Could not publish the TP. Is the backend running?"); return; }
     setPublished(true);
     setTimeout(() => router.push("/teacher/dashboard"), 1400);
   };

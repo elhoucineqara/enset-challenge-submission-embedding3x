@@ -34,23 +34,30 @@ export default function StudentTPPage() {
   // ── Bootstrap ──────────────────────────────────────────────────────────────
   useEffect(() => {
     if (!isStudent || !user) { router.push("/login"); return; }
+    let cancelled = false;
 
-    const found = tpService.getTPById(id);
-    if (!found) { router.push("/student/dashboard"); return; }
-    setTP(found);
+    (async () => {
+      const found = await tpService.getTPById(id);
+      if (!found) { router.push("/student/dashboard"); return; }
+      if (cancelled) return;
+      setTP(found);
 
-    let prog = tpService.getProgress(user.id, id);
-    if (!prog) {
-      prog = tpService.createProgress(user.id, id, assignmentId, found.steps);
-    }
-    setProgress(prog);
+      let prog = await tpService.getProgress(user.id, id);
+      if (!prog) {
+        prog = await tpService.createProgress(user.id, id, assignmentId, found.steps);
+      }
+      if (cancelled) return;
+      setProgress(prog);
 
-    // Resume phase
-    if (prog.status === "completed") setPhase("done");
-    else if (prog.currentStepIndex >= found.steps.length) setPhase("quiz");
-    else setPhase("explanation");
+      // Resume phase
+      if (prog.status === "completed") setPhase("done");
+      else if (prog.currentStepIndex >= found.steps.length) setPhase("quiz");
+      else setPhase("explanation");
 
-    setLoading(false);
+      setLoading(false);
+    })();
+
+    return () => { cancelled = true; };
   }, [id, assignmentId, isStudent, user, router]);
 
   // ── Student starts coding (skips explanation) ─────────────────────────────

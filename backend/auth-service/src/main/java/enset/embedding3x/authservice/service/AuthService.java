@@ -69,10 +69,22 @@ public class AuthService {
                 .build();
     }
 
-    public UserDto getCurrentUser(String email) {
-        return userRepository.findByEmail(email)
+    public UserDto getCurrentUser(String principal) {
+        return userRepository.findByEmail(principal)
+                .or(() -> userRepository.findByUsername(principal))
                 .map(this::toDto)
                 .orElseThrow(() -> new IllegalArgumentException("User not found"));
+    }
+
+    public java.util.List<UserDto> listUsers(String role) {
+        java.util.List<User> users;
+        if (role != null && !role.isBlank()) {
+            users = userRepository.findByRole(
+                    enset.embedding3x.authservice.entity.Role.valueOf(role.toUpperCase()));
+        } else {
+            users = userRepository.findAll();
+        }
+        return users.stream().map(this::toDto).toList();
     }
 
     private UserDto toDto(User user) {

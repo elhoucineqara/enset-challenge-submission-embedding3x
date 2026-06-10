@@ -73,6 +73,7 @@ export const authService = {
 
   /**
    * Register a new account, then return the authenticated user (auto-login).
+   * On a validation failure returns the backend error message (string).
    */
   async register(input: {
     name: string;
@@ -80,7 +81,7 @@ export const authService = {
     email: string;
     password: string;
     role: UserRole;
-  }): Promise<User | null> {
+  }): Promise<User | string | null> {
     try {
       const res = await fetch(`${API_BASE}/api/auth/register`, {
         method: "POST",
@@ -93,7 +94,11 @@ export const authService = {
           role: input.role.toUpperCase(),
         }),
       });
-      if (!res.ok) return null;
+      if (!res.ok) {
+        // Surface the backend's validation message when available.
+        const data = await res.json().catch(() => null);
+        return (data && (data.error as string)) || null;
+      }
       const data = (await res.json()) as AuthResponse;
       const session = toSession(data);
       persist(session);

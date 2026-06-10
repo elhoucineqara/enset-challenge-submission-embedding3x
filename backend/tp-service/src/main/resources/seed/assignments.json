@@ -1,0 +1,35 @@
+[
+  {
+    "id": "0b4f7a42-7200-4cd5-8b7c-3d6f51e2c343",
+    "tpId": "d5b5bf19-c0b0-4b17-8f34-6d9cb4c260a7",
+    "studentIds": [
+      "50cd96b8-e4e8-4c14-8c73-3c44918f7c93",
+      "a7e4ba17-dc62-4b0b-a2f2-d0a88c75d6ea",
+      "b60380b9-8ae8-4d81-8499-59225a2d6df1"
+    ],
+    "assignedBy": "7aebc55c-0ce1-4e19-8f43-6d15de6cf0b7",
+    "assignedAt": "2024-01-10T10:00:00Z",
+    "dueDate": "2024-01-17T23:59:00Z"
+  },
+  {
+    "id": "b4f71b3f-4bd2-4e57-8d2b-3b0ce2b1c2d7",
+    "tpId": "a64dca9f-3993-4a55-aee2-3a9015d61c3a",
+    "studentIds": [
+      "50cd96b8-e4e8-4c14-8c73-3c44918f7c93",
+      "b60380b9-8ae8-4d81-8499-59225a2d6df1"
+    ],
+    "assignedBy": "7aebc55c-0ce1-4e19-8f43-6d15de6cf0b7",
+    "assignedAt": "2024-01-15T11:00:00Z",
+    "dueDate": "2024-01-22T23:59:00Z"
+  },
+  {
+    "id": "4c9f2f8f-8b73-4a21-8c56-2d4c8fcd2df9",
+    "tpId": "c04a8e1c-2e22-4e6a-8b7b-5fd8b72a0e5c",
+    "studentIds": [
+      "a7e4ba17-dc62-4b0b-a2f2-d0a88c75d6ea",
+      "b60380b9-8ae8-4d81-8499-59225a2d6df1"
+    ],
+    "assignedBy": "3b58bafe-60a2-4e15-b06b-13a283b50836",
+    "assignedAt": "2024-01-20T12:00:00Z"
+  }
+]

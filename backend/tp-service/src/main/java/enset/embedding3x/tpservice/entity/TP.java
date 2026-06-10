@@ -20,7 +20,6 @@ import java.util.Map;
 public class TP {
 
     @Id
-    @GeneratedValue(strategy = GenerationType.UUID)
     private String id;
 
     @Column(nullable = false)
@@ -30,6 +29,8 @@ public class TP {
     private String description;
 
     private String difficulty;
+
+    private String field;
 
     private Integer estimatedMinutes;
 

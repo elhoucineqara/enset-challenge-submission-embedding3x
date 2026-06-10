@@ -29,9 +29,11 @@ public class TPService {
 
     public TP create(Map<String, Object> data, String createdBy) {
         TP tp = TP.builder()
+                .id(data.get("id") != null ? (String) data.get("id") : java.util.UUID.randomUUID().toString())
                 .title((String) data.get("title"))
                 .description((String) data.getOrDefault("description", ""))
                 .difficulty((String) data.getOrDefault("difficulty", "beginner"))
+                .field((String) data.getOrDefault("field", "Général"))
                 .estimatedMinutes(data.get("estimatedMinutes") != null
                         ? ((Number) data.get("estimatedMinutes")).intValue() : 30)
                 .starterHTML((String) data.getOrDefault("starterHTML", ""))
@@ -49,6 +51,7 @@ public class TPService {
         if (data.containsKey("title")) tp.setTitle((String) data.get("title"));
         if (data.containsKey("description")) tp.setDescription((String) data.get("description"));
         if (data.containsKey("difficulty")) tp.setDifficulty((String) data.get("difficulty"));
+        if (data.containsKey("field")) tp.setField((String) data.get("field"));
         if (data.containsKey("estimatedMinutes"))
             tp.setEstimatedMinutes(((Number) data.get("estimatedMinutes")).intValue());
         if (data.containsKey("starterHTML")) tp.setStarterHTML((String) data.get("starterHTML"));

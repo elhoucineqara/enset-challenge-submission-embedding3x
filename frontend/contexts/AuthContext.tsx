@@ -9,13 +9,22 @@ import React, {
   ReactNode,
 } from "react";
 import { useRouter } from "next/navigation";
-import { User } from "@/types";
+import { User, UserRole } from "@/types";
 import { authService } from "@/services/authService";
+
+export interface RegisterInput {
+  name: string;
+  username: string;
+  email: string;
+  password: string;
+  role: UserRole;
+}
 
 interface AuthContextValue {
   user: User | null;
   loading: boolean;
   login: (email: string, password: string) => Promise<boolean>;
+  register: (input: RegisterInput) => Promise<{ ok: boolean; error?: string }>;
   logout: () => void;
   isTeacher: boolean;
   isStudent: boolean;
@@ -51,6 +60,22 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     [router]
   );
 
+  const register = useCallback(
+    async (input: RegisterInput): Promise<{ ok: boolean; error?: string }> => {
+      const result = await authService.register(input);
+      if (typeof result === "string") {
+        return { ok: false, error: result };
+      }
+      if (result) {
+        setUser(result);
+        router.push(result.role === "teacher" ? "/teacher/dashboard" : "/student/dashboard");
+        return { ok: true };
+      }
+      return { ok: false, error: "Registration failed. Please try again." };
+    },
+    [router]
+  );
+
   const logout = useCallback(() => {
     authService.logout();
     setUser(null);
@@ -63,6 +88,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         user,
         loading,
         login,
+        register,
         logout,
         isTeacher: user?.role === "teacher",
         isStudent: user?.role === "student",

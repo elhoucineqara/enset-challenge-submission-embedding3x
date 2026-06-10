@@ -22,7 +22,6 @@ import java.util.Map;
 public class Progress {
 
     @Id
-    @GeneratedValue(strategy = GenerationType.UUID)
     private String id;
 
     @Column(name = "student_id", nullable = false)
@@ -63,6 +62,7 @@ public class Progress {
 
     private LocalDateTime startedAt;
     private LocalDateTime completedAt;
+    private LocalDateTime lastActiveAt;
 
     @CreationTimestamp
     @Column(updatable = false)

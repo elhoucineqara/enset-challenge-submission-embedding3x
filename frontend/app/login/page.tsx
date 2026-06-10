@@ -1,6 +1,7 @@
 "use client";
 
 import React, { useState } from "react";
+import Link from "next/link";
 import { useAuth } from "@/contexts/AuthContext";
 
 export default function LoginPage() {
@@ -88,6 +89,13 @@ export default function LoginPage() {
               {loading ? "Signing in..." : "Sign In"}
             </button>
           </form>
+
+          <p className="text-center text-sm text-[#6c7086] mt-6">
+            Don&apos;t have an account?{" "}
+            <Link href="/signup" className="text-[#cba6f7] font-medium hover:underline">
+              Sign up
+            </Link>
+          </p>
         </div>
 
         {/* Quick login for demo */}

@@ -4,26 +4,33 @@ import React, { useState, useEffect } from "react";
 import Link from "next/link";
 import { useAuth } from "@/contexts/AuthContext";
 import { tpService } from "@/services/tpService";
-import { TP, Assignment } from "@/types";
-import { getStudents } from "@/data/mockUsers";
+import { userService } from "@/services/userService";
+import { TP, Assignment, User } from "@/types";
 
 export default function AssignTPPage() {
   const { user, isTeacher } = useAuth();
   const [tps, setTPs] = useState<TP[]>([]);
+  const [students, setStudents] = useState<User[]>([]);
   const [selectedTP, setSelectedTP] = useState<string>("");
   const [selectedStudents, setSelectedStudents] = useState<string[]>([]);
   const [dueDate, setDueDate] = useState("");
   const [saved, setSaved] = useState(false);
   const [existingAssignments, setExistingAssignments] = useState<Assignment[]>([]);
 
-  const students = getStudents();
-
   useEffect(() => {
-    const allTPs = tpService.getAllTPs();
-    setTPs(allTPs);
-    setExistingAssignments(
-      tpService.getAssignmentsForTeacher(user?.id ?? "")
-    );
+    let cancelled = false;
+    (async () => {
+      const [allTPs, roster, existing] = await Promise.all([
+        tpService.getAllTPs(),
+        userService.getStudents(),
+        tpService.getAssignmentsForTeacher(user?.id ?? ""),
+      ]);
+      if (cancelled) return;
+      setTPs(allTPs);
+      setStudents(roster);
+      setExistingAssignments(existing);
+    })();
+    return () => { cancelled = true; };
   }, [user?.id]);
 
   const toggleStudent = (id: string) => {
@@ -37,22 +44,19 @@ export default function AssignTPPage() {
 
   const clearAll = () => setSelectedStudents([]);
 
-  const handleAssign = () => {
+  const handleAssign = async () => {
     if (!selectedTP) { alert("Please select a TP."); return; }
     if (selectedStudents.length === 0) { alert("Please select at least one student."); return; }
 
-    const assignment: Assignment = {
-      id: `assign-${Date.now()}`,
+    const created = await tpService.saveAssignment({
       tpId: selectedTP,
       studentIds: selectedStudents,
-      assignedBy: user!.id,
-      assignedAt: new Date().toISOString(),
       ...(dueDate ? { dueDate: new Date(dueDate).toISOString() } : {}),
-    };
+    });
+    if (!created) { alert("Could not save the assignment. Is the backend running?"); return; }
 
-    tpService.saveAssignment(assignment);
     setSaved(true);
-    setExistingAssignments(tpService.getAssignmentsForTeacher(user?.id ?? ""));
+    setExistingAssignments(await tpService.getAssignmentsForTeacher(user?.id ?? ""));
     setSelectedTP("");
     setSelectedStudents([]);
     setDueDate("");
