@@ -1,128 +1,122 @@
 import { TP, TPProgress, Assignment, StepProgress, Evaluation } from "@/types";
-import { mockTPs } from "@/data/mockTPs";
-import { mockAssignments } from "@/data/mockAssignments";
+import { authService } from "./authService";
+import { publishProgress } from "./realtimeService";
 
-const PROGRESS_KEY = "agentic_tp_progress";
-const ASSIGNMENTS_KEY = "agentic_tp_assignments";
-const TPS_KEY = "agentic_tp_tps";
+/**
+ * TP service — talks to the real tp-service (TPs, assignments, progress)
+ * through the API gateway. All persistence lives in PostgreSQL (tp_db);
+ * there is no client-side mock store anymore.
+ *
+ * I/O methods are async. Pure scoring/format helpers stay synchronous.
+ */
 
-// ─── TP CRUD ──────────────────────────────────────────────────────────────────
+const API_BASE =
+  process.env.NEXT_PUBLIC_API_BASE_URL ?? "http://localhost:8080";
+
+function headers(): Record<string, string> {
+  const h: Record<string, string> = { "Content-Type": "application/json" };
+  const token = authService.getToken();
+  if (token) h.Authorization = `Bearer ${token}`;
+  return h;
+}
+
+async function getJson<T>(path: string, fallback: T): Promise<T> {
+  try {
+    const res = await fetch(`${API_BASE}${path}`, { headers: headers() });
+    if (!res.ok) return fallback;
+    return (await res.json()) as T;
+  } catch {
+    return fallback;
+  }
+}
+
 export const tpService = {
-  getAllTPs(): TP[] {
-    if (typeof window === "undefined") return mockTPs;
-    const raw = localStorage.getItem(TPS_KEY);
-    if (!raw) return mockTPs;
+  ONLINE_WINDOW_SECONDS: 120,
+
+  // ─── TP CRUD ────────────────────────────────────────────────────────────────
+  async getAllTPs(): Promise<TP[]> {
+    return getJson<TP[]>("/api/tps", []);
+  },
+
+  async getTPById(id: string): Promise<TP | null> {
+    return getJson<TP | null>(`/api/tps/${id}`, null);
+  },
+
+  /** Create a TP. Returns the persisted TP (with its server id) or null. */
+  async saveTP(tp: Partial<TP>): Promise<TP | null> {
     try {
-      return JSON.parse(raw) as TP[];
+      const res = await fetch(`${API_BASE}/api/tps`, {
+        method: "POST",
+        headers: headers(),
+        body: JSON.stringify(tp),
+      });
+      if (!res.ok) return null;
+      return (await res.json()) as TP;
     } catch {
-      return mockTPs;
+      return null;
     }
   },
 
-  getTPById(id: string): TP | null {
-    return this.getAllTPs().find((tp) => tp.id === id) ?? null;
-  },
-
-  saveTP(tp: TP): void {
-    const tps = this.getAllTPs();
-    const idx = tps.findIndex((t) => t.id === tp.id);
-    if (idx >= 0) {
-      tps[idx] = tp;
-    } else {
-      tps.push(tp);
-    }
-    if (typeof window !== "undefined") {
-      localStorage.setItem(TPS_KEY, JSON.stringify(tps));
-    }
-  },
-
-  deleteTP(id: string): void {
-    const tps = this.getAllTPs().filter((t) => t.id !== id);
-    if (typeof window !== "undefined") {
-      localStorage.setItem(TPS_KEY, JSON.stringify(tps));
-    }
-  },
-
-  // ─── Assignments ────────────────────────────────────────────────────────────
-  getAllAssignments(): Assignment[] {
-    if (typeof window === "undefined") return mockAssignments;
-    const raw = localStorage.getItem(ASSIGNMENTS_KEY);
-    if (!raw) return mockAssignments;
+  async deleteTP(id: string): Promise<void> {
     try {
-      return JSON.parse(raw) as Assignment[];
+      await fetch(`${API_BASE}/api/tps/${id}`, { method: "DELETE", headers: headers() });
+    } catch { /* ignore */ }
+  },
+
+  // ─── Assignments ──────────────────────────────────────────────────────────
+  async getAssignmentsForTeacher(teacherId: string): Promise<Assignment[]> {
+    return getJson<Assignment[]>(`/api/assignments?teacherId=${encodeURIComponent(teacherId)}`, []);
+  },
+
+  async getAssignmentsForStudent(studentId: string): Promise<Assignment[]> {
+    return getJson<Assignment[]>(`/api/assignments?studentId=${encodeURIComponent(studentId)}`, []);
+  },
+
+  async saveAssignment(assignment: Partial<Assignment>): Promise<Assignment | null> {
+    try {
+      const res = await fetch(`${API_BASE}/api/assignments`, {
+        method: "POST",
+        headers: headers(),
+        body: JSON.stringify({
+          tpId: assignment.tpId,
+          studentIds: assignment.studentIds ?? [],
+          dueDate: assignment.dueDate ?? null,
+        }),
+      });
+      if (!res.ok) return null;
+      return (await res.json()) as Assignment;
     } catch {
-      return mockAssignments;
-    }
-  },
-
-  getAssignmentsForStudent(studentId: string): Assignment[] {
-    return this.getAllAssignments().filter((a) =>
-      a.studentIds.includes(studentId)
-    );
-  },
-
-  getAssignmentsForTeacher(teacherId: string): Assignment[] {
-    return this.getAllAssignments().filter((a) => a.assignedBy === teacherId);
-  },
-
-  saveAssignment(assignment: Assignment): void {
-    const assignments = this.getAllAssignments();
-    const idx = assignments.findIndex((a) => a.id === assignment.id);
-    if (idx >= 0) {
-      assignments[idx] = assignment;
-    } else {
-      assignments.push(assignment);
-    }
-    if (typeof window !== "undefined") {
-      localStorage.setItem(ASSIGNMENTS_KEY, JSON.stringify(assignments));
+      return null;
     }
   },
 
   // ─── Progress ───────────────────────────────────────────────────────────────
-  getAllProgress(): TPProgress[] {
-    if (typeof window === "undefined") return [];
-    const raw = localStorage.getItem(PROGRESS_KEY);
-    if (!raw) return [];
+  async getProgress(studentId: string, tpId: string): Promise<TPProgress | null> {
     try {
-      return JSON.parse(raw) as TPProgress[];
+      const res = await fetch(`${API_BASE}/api/progress/${studentId}/${tpId}`, { headers: headers() });
+      if (!res.ok) return null; // 404 → no progress yet
+      return (await res.json()) as TPProgress;
     } catch {
-      return [];
+      return null;
     }
   },
 
-  getProgress(studentId: string, tpId: string): TPProgress | null {
-    return (
-      this.getAllProgress().find(
-        (p) => p.studentId === studentId && p.tpId === tpId
-      ) ?? null
-    );
+  async getProgressByTp(tpId: string): Promise<TPProgress[]> {
+    return getJson<TPProgress[]>(`/api/progress?tpId=${encodeURIComponent(tpId)}`, []);
   },
 
-  saveProgress(progress: TPProgress): void {
-    const all = this.getAllProgress();
-    const idx = all.findIndex((p) => p.id === progress.id);
-    if (idx >= 0) {
-      all[idx] = progress;
-    } else {
-      all.push(progress);
-    }
-    if (typeof window !== "undefined") {
-      localStorage.setItem(PROGRESS_KEY, JSON.stringify(all));
-    }
-  },
-
-  createProgress(
+  async createProgress(
     studentId: string,
     tpId: string,
     assignmentId: string,
     steps: { id: string }[]
-  ): TPProgress {
-    const progress: TPProgress = {
-      id: `prog-${Date.now()}`,
-      studentId,
-      tpId,
+  ): Promise<TPProgress> {
+    const body = {
       assignmentId,
       currentStepIndex: 0,
+      status: "in_progress",
+      totalTimeSeconds: 0,
+      quizAnswers: {},
       steps: steps.map(
         (s): StepProgress => ({
           stepId: s.id,
@@ -134,39 +128,53 @@ export const tpService = {
           completed: false,
         })
       ),
+    };
+    try {
+      const res = await fetch(`${API_BASE}/api/progress/${tpId}`, {
+        method: "POST",
+        headers: headers(),
+        body: JSON.stringify(body),
+      });
+      if (res.ok) return (await res.json()) as TPProgress;
+    } catch { /* fall through */ }
+    // Local optimistic object if the backend is unreachable.
+    return {
+      id: `prog-${Date.now()}`,
+      studentId,
+      tpId,
+      assignmentId,
+      currentStepIndex: 0,
+      steps: body.steps,
       quizAnswers: {},
       totalTimeSeconds: 0,
       status: "in_progress",
       startedAt: new Date().toISOString(),
     };
-    this.saveProgress(progress);
-    return progress;
   },
 
-    ONLINE_WINDOW_SECONDS: 120,
-
-  
-  touchActivity(studentId: string, tpId: string, stepIndex?: number, code?: string): void {
-    const prog = this.getProgress(studentId, tpId);
-    if (!prog) return;
-    const updated: TPProgress = {
-      ...prog,
-      lastActiveAt: new Date().toISOString(),
-      steps:
-        stepIndex !== undefined && code !== undefined
-          ? prog.steps.map((s, i) => (i === stepIndex ? { ...s, code } : s))
-          : prog.steps,
-    };
-    this.saveProgress(updated);
+  /** Persist a progress snapshot (upsert by student+tp) and push it live. */
+  async saveProgress(progress: TPProgress): Promise<TPProgress | null> {
+    let saved: TPProgress | null = null;
+    try {
+      const res = await fetch(`${API_BASE}/api/progress/${progress.studentId}/${progress.tpId}`, {
+        method: "PUT",
+        headers: headers(),
+        body: JSON.stringify(progress),
+      });
+      if (res.ok) saved = (await res.json()) as TPProgress;
+    } catch { /* ignore — realtime push below still informs dashboards */ }
+    // Broadcast the latest snapshot so live dashboards update immediately.
+    publishProgress(saved ?? progress);
+    return saved;
   },
 
+  // ─── Pure helpers (no I/O) ───────────────────────────────────────────────────
   isOnline(progress: TPProgress | null | undefined): boolean {
     if (!progress?.lastActiveAt) return false;
     const last = new Date(progress.lastActiveAt).getTime();
     return Date.now() - last <= this.ONLINE_WINDOW_SECONDS * 1000;
   },
 
- 
   getBestCode(progress: TPProgress | null | undefined): string {
     if (!progress) return "";
     for (let i = progress.steps.length - 1; i >= 0; i--) {
@@ -176,7 +184,6 @@ export const tpService = {
     return "";
   },
 
-  
   evaluateStudent(progress: TPProgress | null | undefined, tp: TP): Evaluation {
     if (!progress || progress.status === "not_started") {
       return {
@@ -249,7 +256,6 @@ export const tpService = {
     };
   },
 
-  // ─── AI Explanation ─────────────────────────────────────────────────────────
   generateExplanation(tp: TP, stepIndex: number): string {
     const step = tp.steps[stepIndex];
     if (!step) return "No explanation available.";
@@ -266,7 +272,7 @@ ${step.instructions}
 In this step, you'll be working with the following HTML element(s): **${tagList}**.
 
 ## Why it matters
-HTML elements are the building blocks of every web page. 
+HTML elements are the building blocks of every web page.
 Each tag has a specific purpose: some display content, some organize structure, and some allow user interaction.
 
 ## How to approach it
@@ -301,19 +307,5 @@ Good luck! You can do this. 🚀
     }
 
     return `Great question about "${tp.title}"! The key is to focus on the required HTML elements. Re-read the instructions carefully and try typing the code yourself — no copy-paste allowed. You've got this!`;
-  },
-
-  // ─── Teacher Dashboard stats ─────────────────────────────────────────────
-  getStudentStatsForTP(tpId: string) {
-    const allProgress = this.getAllProgress().filter((p) => p.tpId === tpId);
-    return allProgress.map((p) => ({
-      studentId: p.studentId,
-      status: p.status,
-      currentStep: p.currentStepIndex + 1,
-      totalSteps: p.steps.length,
-      totalTimeSeconds: p.totalTimeSeconds,
-      hintsUsed: p.steps.reduce((sum, s) => sum + s.hintsUsed, 0),
-      quizScore: p.quizScore ?? null,
-    }));
   },
 };

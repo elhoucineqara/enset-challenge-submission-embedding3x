@@ -3,6 +3,10 @@ spring:
     name: api-gateway
   cloud:
     gateway:
+      # Downstream services also emit CORS headers; collapse duplicates so the
+      # browser never sees a multi-valued Access-Control-Allow-Origin.
+      default-filters:
+        - DedupeResponseHeader=Access-Control-Allow-Origin Access-Control-Allow-Credentials, RETAIN_UNIQUE
       globalcors:
         corsConfigurations:
           '[/**]':

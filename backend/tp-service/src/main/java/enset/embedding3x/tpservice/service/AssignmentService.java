@@ -41,13 +41,29 @@ public class AssignmentService {
         String dueDateStr = (String) data.get("dueDate");
 
         Assignment assignment = Assignment.builder()
+                .id(data.get("id") != null ? (String) data.get("id") : java.util.UUID.randomUUID().toString())
                 .tpId((String) data.get("tpId"))
                 .studentIds(studentIds)
                 .assignedBy(assignedBy)
-                .dueDate(dueDateStr != null ? LocalDateTime.parse(dueDateStr) : null)
+                .dueDate(parseDate(dueDateStr))
                 .build();
 
         return assignmentRepository.save(assignment);
+    }
+
+    /** Tolerant date parsing: accepts ISO datetime (optionally with trailing Z) or a plain date. */
+    private LocalDateTime parseDate(String value) {
+        if (value == null || value.isBlank()) return null;
+        String v = value.endsWith("Z") ? value.substring(0, value.length() - 1) : value;
+        try {
+            return LocalDateTime.parse(v);
+        } catch (Exception e) {
+            try {
+                return java.time.LocalDate.parse(v).atStartOfDay();
+            } catch (Exception ignored) {
+                return null;
+            }
+        }
     }
 
     public void delete(String id, String requestingUserId) {

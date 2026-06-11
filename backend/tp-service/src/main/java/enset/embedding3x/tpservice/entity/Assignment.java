@@ -18,7 +18,6 @@ import java.util.List;
 public class Assignment {
 
     @Id
-    @GeneratedValue(strategy = GenerationType.UUID)
     private String id;
 
     @Column(nullable = false)

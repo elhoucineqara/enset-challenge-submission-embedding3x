@@ -5,8 +5,8 @@ import Link from "next/link";
 import { useAuth } from "@/contexts/AuthContext";
 import { useRouter } from "next/navigation";
 import { tpService } from "@/services/tpService";
-import { TP, Assignment } from "@/types";
-import { mockUsers } from "@/data/mockUsers";
+import { userService } from "@/services/userService";
+import { TP, Assignment, TPProgress, User } from "@/types";
 import { Wand2, PenLine, X, BookOpen, Sparkles, BarChart3 } from "lucide-react";
 
 function CreateTPModal({ onClose }: { onClose: () => void }) {
@@ -108,6 +108,8 @@ export default function TeacherDashboardPage() {
   const router = useRouter();
   const [tps, setTPs] = useState<TP[]>([]);
   const [assignments, setAssignments] = useState<Assignment[]>([]);
+  const [progressMap, setProgressMap] = useState<Record<string, TPProgress>>({});
+  const [userMap, setUserMap] = useState<Record<string, User>>({});
   const [showCreateModal, setShowCreateModal] = useState(false);
 
   useEffect(() => {
@@ -115,19 +117,39 @@ export default function TeacherDashboardPage() {
       router.push("/login");
       return;
     }
-    setTPs(tpService.getAllTPs());
-    setAssignments(tpService.getAllAssignments());
-  }, [isTeacher, router]);
+    let cancelled = false;
 
-  const getStudentName = (id: string) =>
-    mockUsers.find((u) => u.id === id)?.name ?? id;
+    (async () => {
+      const [allTPs, myAssigns, users] = await Promise.all([
+        tpService.getAllTPs(),
+        tpService.getAssignmentsForTeacher(user!.id),
+        userService.getUserMap(),
+      ]);
+
+      // Prefetch progress for every assigned TP, keyed by `${studentId}:${tpId}`.
+      const tpIds = Array.from(new Set(myAssigns.map((a) => a.tpId)));
+      const progressLists = await Promise.all(tpIds.map((id) => tpService.getProgressByTp(id)));
+      const map: Record<string, TPProgress> = {};
+      progressLists.flat().forEach((p) => { map[`${p.studentId}:${p.tpId}`] = p; });
+
+      if (cancelled) return;
+      setTPs(allTPs);
+      setAssignments(myAssigns);
+      setProgressMap(map);
+      setUserMap(users);
+    })();
+
+    return () => { cancelled = true; };
+  }, [isTeacher, router, user]);
+
+  const getStudentName = (id: string) => userMap[id]?.name ?? id;
 
   const myTPs = tps.filter((tp) => tp.createdBy === user?.id);
   const myAssignments = assignments.filter((a) => a.assignedBy === user?.id);
 
   const getStatsForAssignment = (assignment: Assignment) => {
     return assignment.studentIds.map((sid) => {
-      const prog = tpService.getProgress(sid, assignment.tpId);
+      const prog = progressMap[`${sid}:${assignment.tpId}`] ?? null;
       return {
         studentName: getStudentName(sid),
         status: prog?.status ?? "not_started",

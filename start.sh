@@ -198,11 +198,13 @@ main() {
     HINT_MODEL="${HINT_AGENT_MODEL:-deepseek-coder:6.7b}"
     EVAL_MODEL="${EVALUATION_AGENT_MODEL:-gemma4:31b-cloud}"
     ORCH_MODEL="${ORCHESTRATOR_MODEL:-deepseek-v3.2:cloud}"
+    EMBED_MODEL="${RAG_EMBED_MODEL:-nomic-embed-text}"
 
     info "Explanation agent model : ${BOLD}${EXPL_MODEL}${NC}"
     info "Hint agent model        : ${BOLD}${HINT_MODEL}${NC}"
     info "Evaluation agent model  : ${BOLD}${EVAL_MODEL}${NC}"
     info "Orchestrator model      : ${BOLD}${ORCH_MODEL}${NC}"
+    info "RAG embedding model     : ${BOLD}${EMBED_MODEL}${NC}"
     info "Ollama URL              : ${BOLD}${OLLAMA_URL}${NC}"
 
     # ── 3. Check Ollama ───────────────────────────────────────────────────────
@@ -242,6 +244,7 @@ print('\n'.join(names))
         check_model "$HINT_MODEL" "Hint agent       "
         check_model "$EVAL_MODEL" "Evaluation agent "
         check_model "$ORCH_MODEL" "Orchestrator     "
+        check_model "$EMBED_MODEL" "RAG embeddings   "
     else
         warn "Ollama not responding at ${OLLAMA_URL}"
         warn "Agents will start but LLM calls will fail."

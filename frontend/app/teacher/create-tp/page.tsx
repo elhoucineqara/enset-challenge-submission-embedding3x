@@ -266,7 +266,7 @@ export default function CreateTPPage() {
     setSteps(next);
   };
 
-  const handleSave = () => {
+  const handleSave = async () => {
     if (!title.trim()) {
       alert("Please add a title.");
       return;
@@ -283,7 +283,8 @@ export default function CreateTPPage() {
       createdBy: user!.id,
       createdAt: new Date().toISOString(),
     };
-    tpService.saveTP(tp);
+    const created = await tpService.saveTP(tp);
+    if (!created) { alert("Could not save the TP. Is the backend running?"); return; }
     setSaved(true);
     setTimeout(() => router.push("/teacher/dashboard"), 1200);
   };

@@ -5,8 +5,9 @@ import Link from "next/link";
 import { useAuth } from "@/contexts/AuthContext";
 import { useRouter } from "next/navigation";
 import { tpService } from "@/services/tpService";
-import { TP, Evaluation } from "@/types";
-import { mockUsers } from "@/data/mockUsers";
+import { userService } from "@/services/userService";
+import { subscribeProgress } from "@/services/realtimeService";
+import { TP, TPProgress, Evaluation } from "@/types";
 import { X, Code2, Clock, Lightbulb, Trophy, BookOpen, Layers } from "lucide-react";
 
 interface StudentRow {
@@ -153,56 +154,82 @@ export default function StudentEvaluationPage() {
       return;
     }
 
-    const studentName = (id: string) => mockUsers.find((u) => u.id === id)?.name ?? id;
-    const initials = (id: string) => mockUsers.find((u) => u.id === id)?.avatarInitials ?? "??";
+    let cancelled = false;
 
-    const assignments = tpService.getAssignmentsForTeacher(user!.id);
+    (async () => {
+      const [assignments, userMap] = await Promise.all([
+        tpService.getAssignmentsForTeacher(user!.id),
+        userService.getUserMap(),
+      ]);
+      const studentName = (id: string) => userMap[id]?.name ?? id;
+      const initials = (id: string) => userMap[id]?.avatarInitials ?? "??";
 
-    const byField = new Map<string, Map<string, { tp: TP; studentIds: Set<string> }>>();
-    for (const a of assignments) {
-      const tp = tpService.getTPById(a.tpId);
-      if (!tp) continue;
-      const field = tp.field || "Général";
-      if (!byField.has(field)) byField.set(field, new Map());
-      const tpMap = byField.get(field)!;
-      if (!tpMap.has(tp.id)) tpMap.set(tp.id, { tp, studentIds: new Set() });
-      a.studentIds.forEach((sid) => tpMap.get(tp.id)!.studentIds.add(sid));
-    }
+      // Resolve each assigned TP, grouped by field.
+      const byField = new Map<string, Map<string, { tp: TP; studentIds: Set<string> }>>();
+      const tpCache = new Map<string, TP | null>();
+      for (const a of assignments) {
+        if (!tpCache.has(a.tpId)) tpCache.set(a.tpId, await tpService.getTPById(a.tpId));
+        const tp = tpCache.get(a.tpId);
+        if (!tp) continue;
+        const field = tp.field || "Général";
+        if (!byField.has(field)) byField.set(field, new Map());
+        const tpMap = byField.get(field)!;
+        if (!tpMap.has(tp.id)) tpMap.set(tp.id, { tp, studentIds: new Set() });
+        a.studentIds.forEach((sid) => tpMap.get(tp.id)!.studentIds.add(sid));
+      }
 
-    const result: FieldGroup[] = Array.from(byField.entries())
-      .map(([field, tpMap]) => ({
-        field,
-        tps: Array.from(tpMap.values()).map(({ tp, studentIds }) => ({
-          tp,
-          students: Array.from(studentIds).map((sid): StudentRow => {
-            const prog = tpService.getProgress(sid, tp.id);
-            return {
-              studentId: sid,
-              studentName: studentName(sid),
-              initials: initials(sid),
-              status: prog?.status ?? "not_started",
-              currentStep: prog ? Math.min(prog.currentStepIndex + 1, tp.steps.length) : 0,
-              totalSteps: tp.steps.length,
-              timeSeconds: prog?.totalTimeSeconds ?? 0,
-              hintsUsed: prog?.steps.reduce((s, st) => s + (st.hintsUsed ?? 0), 0) ?? 0,
-              quizScore: prog?.quizScore ?? null,
-              online: tpService.isOnline(prog),
-              lastActiveAt: prog?.lastActiveAt,
-              evaluation: tpService.evaluateStudent(prog, tp),
-              code: tpService.getBestCode(prog),
-            };
-          }),
-        })),
-      }))
-      .sort((a, b) => a.field.localeCompare(b.field));
+      // Fetch all progress per TP once, keyed by `${studentId}:${tpId}`.
+      const tpIds = Array.from(new Set(assignments.map((a) => a.tpId)));
+      const progressLists = await Promise.all(tpIds.map((id) => tpService.getProgressByTp(id)));
+      const progMap = new Map<string, TPProgress>();
+      progressLists.flat().forEach((p) => progMap.set(`${p.studentId}:${p.tpId}`, p));
 
-    setFields(result);
+      const result: FieldGroup[] = Array.from(byField.entries())
+        .map(([field, tpMap]) => ({
+          field,
+          tps: Array.from(tpMap.values()).map(({ tp, studentIds }) => ({
+            tp,
+            students: Array.from(studentIds).map((sid): StudentRow => {
+              const prog = progMap.get(`${sid}:${tp.id}`) ?? null;
+              return {
+                studentId: sid,
+                studentName: studentName(sid),
+                initials: initials(sid),
+                status: prog?.status ?? "not_started",
+                currentStep: prog ? Math.min(prog.currentStepIndex + 1, tp.steps.length) : 0,
+                totalSteps: tp.steps.length,
+                timeSeconds: prog?.totalTimeSeconds ?? 0,
+                hintsUsed: prog?.steps.reduce((s, st) => s + (st.hintsUsed ?? 0), 0) ?? 0,
+                quizScore: prog?.quizScore ?? null,
+                online: tpService.isOnline(prog),
+                lastActiveAt: prog?.lastActiveAt,
+                evaluation: tpService.evaluateStudent(prog, tp),
+                code: tpService.getBestCode(prog),
+              };
+            }),
+          })),
+        }))
+        .sort((a, b) => a.field.localeCompare(b.field));
+
+      if (!cancelled) setFields(result);
+    })();
+
+    return () => { cancelled = true; };
   }, [isTeacher, user, router, tick]);
 
+  // Live updates: a progress push over WebSocket triggers a refetch (the snapshot
+  // is already persisted server-side, so re-reading reflects it immediately).
   useEffect(() => {
-    const id = setInterval(() => setTick((t) => t + 1), 15000);
-    return () => clearInterval(id);
-  }, []);
+    if (!isTeacher) return;
+    const unsubscribe = subscribeProgress(() => setTick((t) => t + 1));
+    // Light fallback refresh keeps "online/offline" presence accurate if the
+    // socket is unavailable.
+    const id = setInterval(() => setTick((t) => t + 1), 30000);
+    return () => {
+      unsubscribe();
+      clearInterval(id);
+    };
+  }, [isTeacher]);
 
   const totals = useMemo(() => {
     const rows = fields.flatMap((f) => f.tps.flatMap((t) => t.students));

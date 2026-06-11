@@ -31,11 +31,13 @@ public class ProgressService {
     public Progress upsert(String studentId, String tpId, Map<String, Object> data) {
         Progress progress = progressRepository.findByStudentIdAndTpId(studentId, tpId)
                 .orElse(Progress.builder()
+                        .id(java.util.UUID.randomUUID().toString())
                         .studentId(studentId)
                         .tpId(tpId)
                         .build());
 
         applyUpdates(progress, data);
+        progress.setLastActiveAt(LocalDateTime.now());
         return progressRepository.save(progress);
     }
 

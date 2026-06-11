@@ -37,6 +37,12 @@ public class AuthController {
         return ResponseEntity.ok(authService.getCurrentUser(userDetails.getUsername()));
     }
 
+    @GetMapping("/users")
+    public ResponseEntity<java.util.List<UserDto>> listUsers(
+            @RequestParam(required = false) String role) {
+        return ResponseEntity.ok(authService.listUsers(role));
+    }
+
     @GetMapping("/health")
     public ResponseEntity<Map<String, String>> health() {
         return ResponseEntity.ok(Map.of("status", "ok", "service", "auth-service"));
